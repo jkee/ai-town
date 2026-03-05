@@ -8,7 +8,7 @@ import {
   IDLE_WORLD_TIMEOUT,
   WORLD_HEARTBEAT_INTERVAL,
 } from './constants';
-import { playerId } from './aiTown/ids';
+import { agentId, playerId } from './aiTown/ids';
 import { kickEngine, startEngine, stopEngine } from './aiTown/main';
 import { engineInsertInput } from './engine/abstractGame';
 
@@ -224,6 +224,91 @@ export const gameDescriptions = query({
       throw new Error(`No map for world: ${args.worldId}`);
     }
     return { worldMap, playerDescriptions, agentDescriptions };
+  },
+});
+
+export const createAgent = mutation({
+  args: {
+    worldId: v.id('worlds'),
+    name: v.string(),
+    character: v.string(),
+    identity: v.string(),
+    plan: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const world = await ctx.db.get(args.worldId);
+    if (!world) {
+      throw new ConvexError(`Invalid world ID: ${args.worldId}`);
+    }
+    // Validate character exists
+    if (!characters.find((c) => c.name === args.character)) {
+      throw new ConvexError(`Invalid character: ${args.character}`);
+    }
+    // Save the agent config for persistence
+    await ctx.db.insert('savedAgents', {
+      worldId: args.worldId,
+      name: args.name,
+      character: args.character,
+      identity: args.identity,
+      plan: args.plan,
+    });
+    // Create the agent in the running world
+    return await insertInput(ctx, args.worldId, 'createAgent', {
+      name: args.name,
+      character: args.character,
+      identity: args.identity,
+      plan: args.plan,
+    });
+  },
+});
+
+export const removeAgent = mutation({
+  args: {
+    worldId: v.id('worlds'),
+    agentId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const world = await ctx.db.get(args.worldId);
+    if (!world) {
+      throw new ConvexError(`Invalid world ID: ${args.worldId}`);
+    }
+    // Find the agent to get its player description (name) for removing from savedAgents
+    const agent = world.agents.find((a) => a.id === args.agentId);
+    if (!agent) {
+      throw new ConvexError(`Agent not found: ${args.agentId}`);
+    }
+    // Find the player description to get the name
+    const playerDesc = await ctx.db
+      .query('playerDescriptions')
+      .withIndex('worldId', (q) => q.eq('worldId', args.worldId).eq('playerId', agent.playerId))
+      .unique();
+    if (playerDesc) {
+      // Remove from savedAgents by matching name
+      const savedAgents = await ctx.db
+        .query('savedAgents')
+        .withIndex('worldId', (q) => q.eq('worldId', args.worldId))
+        .collect();
+      const saved = savedAgents.find((s) => s.name === playerDesc.name);
+      if (saved) {
+        await ctx.db.delete(saved._id);
+      }
+    }
+    // Remove the agent from the running world
+    return await insertInput(ctx, args.worldId, 'removeAgent', {
+      agentId: args.agentId,
+    });
+  },
+});
+
+export const listSavedAgents = query({
+  args: {
+    worldId: v.id('worlds'),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('savedAgents')
+      .withIndex('worldId', (q) => q.eq('worldId', args.worldId))
+      .collect();
   },
 });
 

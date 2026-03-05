@@ -28,11 +28,41 @@ const init = mutation({
       worldStatus.engineId,
     );
     if (shouldCreate) {
-      const toCreate = args.numAgents !== undefined ? args.numAgents : Descriptions.length;
-      for (let i = 0; i < toCreate; i++) {
-        await insertInput(ctx, worldStatus.worldId, 'createAgent', {
-          descriptionIndex: i % Descriptions.length,
-        });
+      // Check if there are saved agents to restore
+      const savedAgents = await ctx.db
+        .query('savedAgents')
+        .withIndex('worldId', (q) => q.eq('worldId', worldStatus.worldId))
+        .collect();
+
+      if (savedAgents.length > 0) {
+        // Restore from saved agents
+        for (const agent of savedAgents) {
+          await insertInput(ctx, worldStatus.worldId, 'createAgent', {
+            name: agent.name,
+            character: agent.character,
+            identity: agent.identity,
+            plan: agent.plan,
+          });
+        }
+      } else {
+        // First run: seed from hardcoded Descriptions and save them
+        const toCreate = args.numAgents !== undefined ? args.numAgents : Descriptions.length;
+        for (let i = 0; i < toCreate; i++) {
+          const desc = Descriptions[i % Descriptions.length];
+          await insertInput(ctx, worldStatus.worldId, 'createAgent', {
+            name: desc.name,
+            character: desc.character,
+            identity: desc.identity,
+            plan: desc.plan,
+          });
+          await ctx.db.insert('savedAgents', {
+            worldId: worldStatus.worldId,
+            name: desc.name,
+            character: desc.character,
+            identity: desc.identity,
+            plan: desc.plan,
+          });
+        }
       }
     }
   },

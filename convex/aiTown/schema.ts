@@ -64,6 +64,15 @@ export const aiTownTables = {
     'id',
   ]),
 
+  // Saved agent configurations that persist across world resets and restarts.
+  savedAgents: defineTable({
+    worldId: v.id('worlds'),
+    name: v.string(),
+    character: v.string(),
+    identity: v.string(),
+    plan: v.string(),
+  }).index('worldId', ['worldId']),
+
   // The agent layer wants to know what the last (completed) conversation was between two players,
   // so this table represents a labelled graph indicating which players have talked to each other.
   participatedTogether: defineTable({

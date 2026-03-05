@@ -5,7 +5,6 @@ import { Conversation, conversationInputs } from './conversation';
 import { movePlayer } from './movement';
 import { inputHandler } from './inputHandler';
 import { point } from '../util/types';
-import { Descriptions } from '../../data/characters';
 import { AgentDescription } from './agentDescription';
 import { Agent } from './agent';
 
@@ -116,18 +115,40 @@ export const agentInputs = {
       return null;
     },
   }),
-  createAgent: inputHandler({
+  removeAgent: inputHandler({
     args: {
-      descriptionIndex: v.number(),
+      agentId,
     },
     handler: (game, now, args) => {
-      const description = Descriptions[args.descriptionIndex];
+      const agentId = parseGameId('agents', args.agentId);
+      const agent = game.world.agents.get(agentId);
+      if (!agent) {
+        throw new Error(`Couldn't find agent: ${agentId}`);
+      }
+      const player = game.world.players.get(agent.playerId);
+      if (player) {
+        player.leave(game, now);
+      }
+      game.world.agents.delete(agentId);
+      game.agentDescriptions.delete(agentId);
+      game.descriptionsModified = true;
+      return null;
+    },
+  }),
+  createAgent: inputHandler({
+    args: {
+      name: v.string(),
+      character: v.string(),
+      identity: v.string(),
+      plan: v.string(),
+    },
+    handler: (game, now, args) => {
       const playerId = Player.join(
         game,
         now,
-        description.name,
-        description.character,
-        description.identity,
+        args.name,
+        args.character,
+        args.identity,
       );
       const agentId = game.allocId('agents');
       game.world.agents.set(
@@ -145,8 +166,8 @@ export const agentInputs = {
         agentId,
         new AgentDescription({
           agentId: agentId,
-          identity: description.identity,
-          plan: description.plan,
+          identity: args.identity,
+          plan: args.plan,
         }),
       );
       return { agentId };
