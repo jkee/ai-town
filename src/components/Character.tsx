@@ -67,32 +67,10 @@ export const Character = ({
 
   if (!spriteSheet) return null;
 
-  let blockOffset = { x: 0, y: 0 };
-  switch (roundedOrientation) {
-    case 2:
-      blockOffset = { x: -20, y: 0 };
-      break;
-    case 0:
-      blockOffset = { x: 20, y: 0 };
-      break;
-    case 3:
-      blockOffset = { x: 0, y: -20 };
-      break;
-    case 1:
-      blockOffset = { x: 0, y: 20 };
-      break;
-  }
-
   return (
     <Container x={x} y={y} interactive={true} pointerdown={onClick} cursor="pointer">
-      {isThinking && (
-        // TODO: We'll eventually have separate assets for thinking and speech animations.
-        <Text x={-20} y={-10} scale={{ x: -0.8, y: 0.8 }} text={'💭'} anchor={{ x: 0.5, y: 0.5 }} />
-      )}
-      {isSpeaking && (
-        // TODO: We'll eventually have separate assets for thinking and speech animations.
-        <Text x={18} y={-10} scale={0.8} text={'💬'} anchor={{ x: 0.5, y: 0.5 }} />
-      )}
+      {isThinking && <FloatingEmoji emoji="💭" offsetX={-20} />}
+      {isSpeaking && <FloatingEmoji emoji="💬" offsetX={18} />}
       {isViewer && <ViewerIndicator />}
       <AnimatedSprite
         ref={ref}
@@ -101,18 +79,56 @@ export const Character = ({
         animationSpeed={speed}
         anchor={{ x: 0.5, y: 0.5 }}
       />
-      {emoji && (
-        <Text x={0} y={-24} scale={{ x: -0.8, y: 0.8 }} text={emoji} anchor={{ x: 0.5, y: 0.5 }} />
-      )}
+      {emoji && <FloatingEmoji emoji={emoji} offsetX={0} offsetY={-28} pulse />}
     </Container>
   );
 };
 
+function FloatingEmoji({
+  emoji,
+  offsetX = 0,
+  offsetY = -10,
+  pulse = false,
+}: {
+  emoji: string;
+  offsetX?: number;
+  offsetY?: number;
+  pulse?: boolean;
+}) {
+  const [bounce, setBounce] = useState(0);
+
+  useEffect(() => {
+    if (!pulse) return;
+    let frame = 0;
+    const ticker = PIXI.Ticker.shared;
+    const update = () => {
+      frame++;
+      setBounce(Math.sin(frame * 0.08) * 4);
+    };
+    ticker.add(update);
+    return () => { ticker.remove(update); };
+  }, [pulse]);
+
+  return (
+    <Text
+      x={offsetX}
+      y={offsetY + (pulse ? bounce : 0)}
+      scale={pulse ? { x: -0.9, y: 0.9 } : { x: -0.8, y: 0.8 }}
+      text={emoji}
+      anchor={{ x: 0.5, y: 0.5 }}
+    />
+  );
+}
+
 function ViewerIndicator() {
   const draw = useCallback((g: PIXI.Graphics) => {
     g.clear();
-    g.beginFill(0xffff0b, 0.5);
-    g.drawRoundedRect(-10, 10, 20, 10, 100);
+    // Neon pink glow indicator
+    g.beginFill(0xff2d95, 0.4);
+    g.drawRoundedRect(-10, 10, 20, 6, 100);
+    g.endFill();
+    g.beginFill(0xff2d95, 0.2);
+    g.drawRoundedRect(-14, 9, 28, 8, 100);
     g.endFill();
   }, []);
 

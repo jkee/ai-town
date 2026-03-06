@@ -65,9 +65,21 @@ export const DELETE_BATCH_SIZE = 64;
 export const HUMAN_IDLE_TOO_LONG = 5 * 60 * 1000;
 
 export const ACTIVITIES = [
-  { description: 'reading a book', emoji: '📖', duration: 60_000 },
-  { description: 'daydreaming', emoji: '🤔', duration: 60_000 },
-  { description: 'gardening', emoji: '🥕', duration: 60_000 },
+  { description: 'танцует как ненормальный', emoji: '🕺', duration: 60_000 },
+  { description: 'крутит файер-шоу', emoji: '🔥', duration: 45_000 },
+  { description: 'жонглирует бутылками', emoji: '🍾', duration: 50_000 },
+  { description: 'орёт в мегафон', emoji: '📢', duration: 30_000 },
+  { description: 'медитирует под басы', emoji: '🧘', duration: 60_000 },
+  { description: 'делает стойку на руках', emoji: '🤸', duration: 35_000 },
+  { description: 'пускает мыльные пузыри', emoji: '🫧', duration: 40_000 },
+  { description: 'рисует граффити', emoji: '🎨', duration: 55_000 },
+  { description: 'играет на барабанах', emoji: '🥁', duration: 50_000 },
+  { description: 'пьёт что-то странное', emoji: '🍹', duration: 30_000 },
+  { description: 'показывает фокус', emoji: '🎩', duration: 40_000 },
+  { description: 'кричит "ВОТЭТОЦИРК!"', emoji: '🎪', duration: 20_000 },
+  { description: 'светится неоном', emoji: '✨', duration: 45_000 },
+  { description: 'качает головой под бит', emoji: '🎧', duration: 50_000 },
+  { description: 'обнимает столб', emoji: '💃', duration: 35_000 },
 ];
 
 export const ENGINE_ACTION_DURATION = 30000;

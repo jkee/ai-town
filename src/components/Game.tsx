@@ -68,7 +68,7 @@ https://github.com/michalochman/react-pixi-fiber/issues/145#issuecomment-5315492
         {/* Player details overlay */}
         {selectedElement && (
           <div
-            className="absolute top-0 right-0 h-full w-80 overflow-y-auto px-4 py-6 bg-brown-800/90 text-brown-100 backdrop-blur-sm border-l-4 border-brown-900"
+            className="absolute top-0 right-0 h-full w-80 overflow-y-auto px-4 py-6 bg-brown-900/95 text-brown-100 backdrop-blur-md border-l-2 border-neon-purple/40"
             ref={scrollViewRef}
           >
             <PlayerDetails

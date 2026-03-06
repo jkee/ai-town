@@ -86,8 +86,9 @@ export default function AddAgentButton() {
 
 const modalStyles = {
   overlay: {
-    backgroundColor: 'rgb(0, 0, 0, 75%)',
+    backgroundColor: 'rgba(5, 5, 16, 0.85)',
     zIndex: 12,
+    backdropFilter: 'blur(4px)',
   },
   content: {
     top: '50%',
@@ -98,10 +99,11 @@ const modalStyles = {
     transform: 'translate(-50%, -50%)',
     maxWidth: '500px',
     width: '90%',
-    border: '10px solid rgb(23, 20, 33)',
-    borderRadius: '0',
-    background: 'rgb(35, 38, 58)',
+    border: '2px solid #ff2d95',
+    borderRadius: '4px',
+    background: 'linear-gradient(135deg, rgba(10, 10, 26, 0.97), rgba(25, 15, 40, 0.97))',
     color: 'white',
     fontFamily: '"Upheaval Pro", "sans-serif"',
+    boxShadow: '0 0 30px rgba(255, 45, 149, 0.3), 0 0 60px rgba(176, 38, 255, 0.1)',
   },
 };

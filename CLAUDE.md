@@ -4,6 +4,8 @@
 
 Fork of [a]i-town](https://github.com/a16z-infra/ai-town) turned into **БЛЯДСКИЙ ЦИРК** — a circus-themed virtual world where AI agents live, talk, and cause chaos. All UI is in Russian.
 
+**Vibe**: crazy festival circus sexy rave. Think burning man meets cyberpunk circus — neon, smoke, strobes, chaos.
+
 ## CRITICAL SECURITY RULES
 
 - **NEVER hardcode API keys, secrets, or credentials in source files.** Always use environment variables.
