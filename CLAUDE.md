@@ -28,7 +28,7 @@ npx convex dev       # Convex watcher only (if running frontend separately)
 - **Frontend**: React + PixiJS (pixi-viewport), Vite
 - **Backend**: Convex (serverless functions with local dev backend)
 - **AI**: OpenRouter API (Gemini Flash for chat, Gemini Pro for image generation)
-- **Map**: Tile-based 64x48 grid, 32px tiles
+- **Map**: Tile-based 48x32 grid, 32px tiles
 
 ### Convex Runtime Constraints
 - Two runtimes: **V8** (default) and **Node.js** (`"use node"` directive)
@@ -67,12 +67,12 @@ npx convex dev       # Convex watcher only (if running frontend separately)
 - **Columns**: 3 walking animation frames per direction
 - **Generation**: Gemini Pro generates pixel art on green (#00FF00) background
 - **Processing pipeline**:
-  1. Detect background color from image edges
+  1. Detect background color from image edges (override to pure green if greenish)
   2. Find content bounding box (exclude green borders)
   3. Gap-based grid detection: count pixel density per column/row, find gaps
-  4. Extract cells from detected grid boundaries
+  4. Extract cells from detected grid boundaries, fix duplicate frames if too wide
   5. Resize each cell to 32x32 via nearest-neighbor
-  6. Remove green background via color-distance threshold
+  6. Remove green background via color-distance threshold + aggressive green-specific removal
   7. Assemble into 96x128 spritesheet
 - `src/components/Player.tsx` — `generatedSpritesheetData` defines the PixiJS spritesheet layout for dynamic sprites; uses `playerDesc.spriteSheetUrl`
 - `convex/aiTown/playerDescription.ts` — Has `spriteSheetUrl` and `portraitUrl` optional fields
@@ -81,8 +81,8 @@ npx convex dev       # Convex watcher only (if running frontend separately)
 - `convex/init.ts` — World creation, seeds agents from `savedAgents` table or hardcoded `data/characters.ts`
 - `convex/world.ts` — World queries/mutations: heartbeat, join, leave, state
 - `convex/schema.ts` — Database schema (worlds, players, agents, conversations, maps, savedAgents, etc.)
-- `data/characters.ts` — Hardcoded default circus characters (identity, plan, sprite name)
-- `data/gentle.js` — Map data (tile arrays, dimensions, tileset path)
+- `data/characters.ts` — Default circus characters (identity, plan, portraitPrompt). All use `character: 'generated'`
+- `data/festival.js` — Map data (tile arrays, dimensions, tileset path)
 
 ### LLM Integration
 - `convex/util/llm.ts` — `chatCompletion()`, `getLLMConfig()`, `retryWithBackoff()`
@@ -94,13 +94,13 @@ npx convex dev       # Convex watcher only (if running frontend separately)
 - `src/components/Game.tsx` — Game view: PixiJS stage + right sidebar
 - `src/components/PixiGame.tsx` — PixiJS viewport, click-to-move, camera
 - `src/components/Player.tsx` — Sprite rendering, animation, speech bubbles
-- `src/components/AgentCreator.tsx` — Manual agent creator (pick sprite, write identity)
+- `src/components/AgentCreator.tsx` — Agent manager: create agents (all use generated sprites) and remove existing ones
 - `src/components/PlayerDetails.tsx` — Selected player info panel
 
 ## Common Tasks
 
 ### Add a new agent via UI
-Click "Добавиться" button in sidebar, describe the character. AI generates name, personality, portrait, and animated spritesheet. Takes ~60 seconds.
+Click "Артисты" button to open the agent manager. Fill in name, identity, and plan. The agent gets an AI-generated portrait and spritesheet. Takes ~60 seconds.
 
 ### Add a hardcoded agent
 Edit `data/characters.ts`, add entry to `Descriptions` array. Run `npx convex run init` to seed.
@@ -133,4 +133,4 @@ npx convex run testing:randomPositions # Scatter all players
 - **Convex generated files**: `convex/_generated/` is auto-generated. Don't edit manually but DO commit changes.
 - **Image model**: `google/gemini-3-pro-image-preview` via OpenRouter for spritesheet/portrait generation. Needs `modalities: ['image', 'text']` in request.
 - **Grid detection**: AI sometimes generates grids with wrong dimensions (4x5 instead of 3x4). Gap-based detection handles this by finding actual cell boundaries and picking first 3x4 subset.
-- **savedAgents table**: Agents persist across world restarts. `init.ts` restores from `savedAgents` if any exist, otherwise seeds from hardcoded characters.
+- **savedAgents table**: Agents persist across world restarts (including `spriteSheetUrl` and `portraitUrl`). `init.ts` restores from `savedAgents` if any exist, otherwise generates default agents from `data/characters.ts`.

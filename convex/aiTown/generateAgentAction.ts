@@ -272,8 +272,12 @@ Output: ONE image with the 3×4 sprite grid on solid green.`;
   const binaryData = base64ToUint8Array(base64);
   const source = decodeImage(binaryData, mimeType);
 
-  // Detect background color from edges
-  const bg = detectBackgroundColor(source);
+  // Detect background color from edges, but prefer green since we ask for #00FF00
+  let bg = detectBackgroundColor(source);
+  // If detected color is even remotely greenish, use pure green
+  if (bg.g > bg.r && bg.g > bg.b) {
+    bg = { r: 0, g: 255, b: 0 };
+  }
 
   // Extract the 12 frames from the generated grid
   const frames = extractGridFrames(source, 3, 4, bg);
@@ -283,7 +287,8 @@ Output: ONE image with the 3×4 sprite grid on solid green.`;
 
   for (let row = 0; row < 4; row++) {
     for (let col = 0; col < 3; col++) {
-      const frame = frames[row * 3 + col];
+      // Fix frames that contain duplicate sprites side-by-side
+      const frame = fixDuplicateFrame(frames[row * 3 + col], bg);
       // Resize each frame to 32×32
       const resized = resizeNearestNeighbor(frame, 32, 32);
       // Remove background
@@ -511,6 +516,84 @@ function detectBackgroundColor(source: RawImage): BgColor {
   };
 }
 
+/**
+ * Fix frames that contain duplicate sprites or are too wide.
+ * Crops wide frames to a square region centered on the content.
+ */
+function fixDuplicateFrame(frame: RawImage, bg: BgColor): RawImage {
+  const { width, height, data } = frame;
+
+  // If frame is roughly square already, no fix needed
+  if (width <= height * 1.2) return frame;
+
+  const threshold = 80;
+
+  // Find content bounding box
+  let minX = width, maxX = 0, minY = height, maxY = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      if (colorDistance(data[idx], data[idx + 1], data[idx + 2], bg.r, bg.g, bg.b) >= threshold) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX <= minX || maxY <= minY) return frame;
+
+  const contentW = maxX - minX + 1;
+  const contentH = maxY - minY + 1;
+
+  // If content is wider than 1.4x its height, it likely has duplicates
+  // Crop to a square region (height x height) centered on the densest column
+  if (contentW > contentH * 1.4) {
+    // Find the column with the most content pixels
+    const colDensity = new Float64Array(width);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        if (colorDistance(data[idx], data[idx + 1], data[idx + 2], bg.r, bg.g, bg.b) >= threshold) {
+          colDensity[x]++;
+        }
+      }
+    }
+
+    // Find densest region of width=height (square crop)
+    const cropW = Math.min(height, width);
+    let bestStart = 0, bestSum = 0;
+    let runSum = 0;
+    for (let x = 0; x < cropW && x < width; x++) runSum += colDensity[x];
+    bestSum = runSum;
+    for (let x = 1; x <= width - cropW; x++) {
+      runSum -= colDensity[x - 1];
+      runSum += colDensity[x + cropW - 1];
+      if (runSum > bestSum) {
+        bestSum = runSum;
+        bestStart = x;
+      }
+    }
+
+    const cropData = new Uint8Array(cropW * height * 4);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < cropW; x++) {
+        const srcIdx = (y * width + (bestStart + x)) * 4;
+        const dstIdx = (y * cropW + x) * 4;
+        cropData[dstIdx] = data[srcIdx];
+        cropData[dstIdx + 1] = data[srcIdx + 1];
+        cropData[dstIdx + 2] = data[srcIdx + 2];
+        cropData[dstIdx + 3] = data[srcIdx + 3];
+      }
+    }
+    console.log(`Fixed wide frame: ${width}x${height} -> ${cropW}x${height} (content was ${contentW}x${contentH})`);
+    return { width: cropW, height, data: cropData };
+  }
+
+  return frame;
+}
+
 function resizeNearestNeighbor(source: RawImage, targetW: number, targetH: number): Uint8Array {
   const result = new Uint8Array(targetW * targetH * 4);
   for (let y = 0; y < targetH; y++) {
@@ -533,8 +616,14 @@ function removeBackground(pixels: Uint8Array, w: number, h: number, bg: BgColor)
   const threshold = 80;
   for (let i = 0; i < w * h * 4; i += 4) {
     if (result[i + 3] < 128) { result[i + 3] = 0; continue; }
-    const dist = colorDistance(result[i], result[i + 1], result[i + 2], bg.r, bg.g, bg.b);
-    if (dist < threshold) result[i + 3] = 0;
+    const r = result[i], g = result[i + 1], b = result[i + 2];
+    // Standard background distance check
+    const dist = colorDistance(r, g, b, bg.r, bg.g, bg.b);
+    if (dist < threshold) { result[i + 3] = 0; continue; }
+    // Aggressive green removal: any pixel where green dominates
+    if (g > 120 && g > r * 1.3 && g > b * 1.3) { result[i + 3] = 0; continue; }
+    // Bright green catch-all
+    if (g > 180 && r < 120 && b < 120) { result[i + 3] = 0; continue; }
   }
   return result;
 }
