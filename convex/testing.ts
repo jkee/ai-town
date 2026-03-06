@@ -16,6 +16,7 @@ import { fetchEmbedding } from './util/llm';
 import { chatCompletion } from './util/llm';
 import { startConversationMessage } from './agent/conversation';
 import { GameId } from './aiTown/ids';
+import * as mapData from '../data/festival';
 
 // Clear all of the tables except for the embeddings cache.
 const excludedTables: Array<TableNames> = ['embeddingsCache'];
@@ -198,5 +199,43 @@ export const testConvo = internalAction({
       'p:6' as GameId<'players'>,
     )) as any;
     return await a.readAll();
+  },
+});
+
+export const resetMap = mutation({
+  handler: async (ctx) => {
+    const { worldStatus } = await getDefaultWorld(ctx.db);
+    const existingMap = await ctx.db
+      .query('maps')
+      .withIndex('worldId', (q) => q.eq('worldId', worldStatus.worldId))
+      .unique();
+    if (existingMap) {
+      await ctx.db.patch(existingMap._id, {
+        width: mapData.mapwidth,
+        height: mapData.mapheight,
+        tileSetUrl: mapData.tilesetpath,
+        tileSetDimX: mapData.tilesetpxw,
+        tileSetDimY: mapData.tilesetpxh,
+        tileDim: mapData.tiledim,
+        bgTiles: mapData.bgtiles,
+        objectTiles: mapData.objmap,
+        animatedSprites: mapData.animatedsprites,
+      });
+      console.log('Map updated successfully');
+    } else {
+      await ctx.db.insert('maps', {
+        worldId: worldStatus.worldId,
+        width: mapData.mapwidth,
+        height: mapData.mapheight,
+        tileSetUrl: mapData.tilesetpath,
+        tileSetDimX: mapData.tilesetpxw,
+        tileSetDimY: mapData.tilesetpxh,
+        tileDim: mapData.tiledim,
+        bgTiles: mapData.bgtiles,
+        objectTiles: mapData.objmap,
+        animatedSprites: mapData.animatedsprites,
+      });
+      console.log('Map inserted successfully');
+    }
   },
 });
