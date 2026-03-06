@@ -11,8 +11,6 @@ import { useHistoricalTime } from '../hooks/useHistoricalTime.ts';
 import { DebugTimeManager } from './DebugTimeManager.tsx';
 import { GameId } from '../../convex/aiTown/ids.ts';
 import { useServerGame } from '../hooks/serverGame.ts';
-import AgentCreator from './AgentCreator.tsx';
-import AddAgentButton from './buttons/AddAgentButton.tsx';
 
 export const SHOW_DEBUG_UI = !!import.meta.env.VITE_SHOW_DEBUG_UI;
 
@@ -44,9 +42,9 @@ export default function Game() {
   return (
     <>
       {SHOW_DEBUG_UI && <DebugTimeManager timeManager={timeManager} width={200} height={100} />}
-      <div className="mx-auto w-full max-w grid grid-rows-[240px_1fr] lg:grid-rows-[1fr] lg:grid-cols-[1fr_auto] lg:grow max-w-[1400px] min-h-[480px] game-frame">
-        {/* Game area */}
-        <div className="relative overflow-hidden bg-brown-900" ref={gameWrapperRef}>
+      <div className="mx-auto w-full lg:grow max-w-[1400px] min-h-[480px] game-frame relative">
+        {/* Game area - full width */}
+        <div className="relative overflow-hidden bg-brown-900 w-full h-full" ref={gameWrapperRef}>
           <div className="absolute inset-0">
             <div className="container">
               <Stage width={width} height={height} options={{ backgroundColor: 0x7ab5ff }}>
@@ -67,24 +65,22 @@ https://github.com/michalochman/react-pixi-fiber/issues/145#issuecomment-5315492
             </div>
           </div>
         </div>
-        {/* Right column area */}
-        <div
-          className="flex flex-col overflow-y-auto shrink-0 px-4 py-6 sm:px-6 lg:w-96 xl:pr-6 border-t-8 sm:border-t-0 sm:border-l-8 border-brown-900  bg-brown-800 text-brown-100"
-          ref={scrollViewRef}
-        >
-          <div className="mb-4 flex gap-2">
-            <AgentCreator worldId={worldId} game={game} />
-            <AddAgentButton />
+        {/* Player details overlay */}
+        {selectedElement && (
+          <div
+            className="absolute top-0 right-0 h-full w-80 overflow-y-auto px-4 py-6 bg-brown-800/90 text-brown-100 backdrop-blur-sm border-l-4 border-brown-900"
+            ref={scrollViewRef}
+          >
+            <PlayerDetails
+              worldId={worldId}
+              engineId={engineId}
+              game={game}
+              playerId={selectedElement?.id}
+              setSelectedElement={setSelectedElement}
+              scrollViewRef={scrollViewRef}
+            />
           </div>
-          <PlayerDetails
-            worldId={worldId}
-            engineId={engineId}
-            game={game}
-            playerId={selectedElement?.id}
-            setSelectedElement={setSelectedElement}
-            scrollViewRef={scrollViewRef}
-          />
-        </div>
+        )}
       </div>
     </>
   );

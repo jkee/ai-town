@@ -1,21 +1,19 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { Id } from '../../convex/_generated/dataModel';
 import { characters } from '../../data/characters';
 import { toast } from 'react-toastify';
-import { ServerGame } from '../hooks/serverGame';
+import { useServerGame } from '../hooks/serverGame';
 import ReactModal from 'react-modal';
+import Button from './buttons/Button';
+import starImg from '../../assets/star.svg';
 
 const characterOptions = characters.map((c) => c.name);
 
-export default function AgentCreator({
-  worldId,
-  game,
-}: {
-  worldId: Id<'worlds'>;
-  game: ServerGame;
-}) {
+export default function AgentCreator() {
+  const worldStatus = useQuery(api.world.defaultWorldStatus);
+  const worldId = worldStatus?.worldId;
+  const game = useServerGame(worldId);
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [character, setCharacter] = useState(characterOptions[0]);
@@ -24,6 +22,10 @@ export default function AgentCreator({
 
   const createAgent = useMutation(api.world.createAgent);
   const removeAgentMutation = useMutation(api.world.removeAgent);
+
+  if (!worldId || !game) {
+    return null;
+  }
 
   const agents = [...game.world.agents.values()];
   const playerDescriptions = game.playerDescriptions;
@@ -69,18 +71,9 @@ export default function AgentCreator({
 
   return (
     <>
-      <button
-        className="button text-white shadow-solid text-xl pointer-events-auto"
-        onClick={() => setModalOpen(true)}
-      >
-        <div className="inline-block bg-clay-700">
-          <span>
-            <div className="inline-flex h-full items-center gap-4 px-2">
-              Артисты
-            </div>
-          </span>
-        </div>
-      </button>
+      <Button onClick={() => setModalOpen(true)} imgUrl={starImg}>
+        Артисты
+      </Button>
 
       <ReactModal
         isOpen={modalOpen}
