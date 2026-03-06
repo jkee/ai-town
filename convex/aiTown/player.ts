@@ -172,6 +172,8 @@ export class Player {
     character: string,
     description: string,
     tokenIdentifier?: string,
+    portraitUrl?: string,
+    spriteSheetUrl?: string,
   ) {
     if (tokenIdentifier) {
       let numHumans = 0;
@@ -188,16 +190,38 @@ export class Player {
       }
     }
     let position;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const candidate = {
-        x: Math.floor(Math.random() * game.worldMap.width),
-        y: Math.floor(Math.random() * game.worldMap.height),
-      };
-      if (blocked(game, now, candidate)) {
-        continue;
+    // Try to spawn near existing players first
+    const existingPlayers = [...game.world.players.values()];
+    if (existingPlayers.length > 0) {
+      const anchor = existingPlayers[Math.floor(Math.random() * existingPlayers.length)];
+      const radius = 10;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const candidate = {
+          x: Math.max(0, Math.min(game.worldMap.width - 1,
+            anchor.position.x + Math.floor(Math.random() * radius * 2) - radius)),
+          y: Math.max(0, Math.min(game.worldMap.height - 1,
+            anchor.position.y + Math.floor(Math.random() * radius * 2) - radius)),
+        };
+        if (blocked(game, now, candidate)) {
+          continue;
+        }
+        position = candidate;
+        break;
       }
-      position = candidate;
-      break;
+    }
+    // Fallback to random position anywhere on the map
+    if (!position) {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const candidate = {
+          x: Math.floor(Math.random() * game.worldMap.width),
+          y: Math.floor(Math.random() * game.worldMap.height),
+        };
+        if (blocked(game, now, candidate)) {
+          continue;
+        }
+        position = candidate;
+        break;
+      }
     }
     if (!position) {
       throw new Error(`Failed to find a free position!`);
@@ -209,7 +233,8 @@ export class Player {
       { dx: 0, dy: -1 },
     ];
     const facing = facingOptions[Math.floor(Math.random() * facingOptions.length)];
-    if (!characters.find((c) => c.name === character)) {
+    // Only validate character against hardcoded list if no custom spritesheet
+    if (!spriteSheetUrl && !characters.find((c) => c.name === character)) {
       throw new Error(`Invalid character: ${character}`);
     }
     const playerId = game.allocId('players');
@@ -231,6 +256,8 @@ export class Player {
         character,
         description,
         name,
+        portraitUrl,
+        spriteSheetUrl,
       }),
     );
     game.descriptionsModified = true;

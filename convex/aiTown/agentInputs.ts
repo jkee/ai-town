@@ -141,6 +141,8 @@ export const agentInputs = {
       character: v.string(),
       identity: v.string(),
       plan: v.string(),
+      portraitUrl: v.optional(v.string()),
+      spriteSheetUrl: v.optional(v.string()),
     },
     handler: (game, now, args) => {
       const playerId = Player.join(
@@ -149,6 +151,9 @@ export const agentInputs = {
         args.name,
         args.character,
         args.identity,
+        undefined,
+        args.portraitUrl,
+        args.spriteSheetUrl,
       );
       const agentId = game.allocId('agents');
       game.world.agents.set(

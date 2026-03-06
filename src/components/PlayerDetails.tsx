@@ -56,7 +56,7 @@ export default function PlayerDetails({
   if (!playerId) {
     return (
       <div className="h-full text-xl flex text-center items-center p-4">
-        Click on an agent on the map to see chat history.
+        Кликни на артиста на арене чтобы подслушать.
       </div>
     );
   }
@@ -133,6 +133,15 @@ export default function PlayerDetails({
   const pendingSuffix = (s: string) => '';
   return (
     <>
+      {playerDescription?.portraitUrl && (
+        <div className="mb-3">
+          <img
+            src={playerDescription.portraitUrl}
+            alt={playerDescription.name}
+            className="w-full h-48 object-cover rounded border-4 border-brown-700"
+          />
+        </div>
+      )}
       <div className="flex gap-4">
         <div className="box w-3/4 sm:w-full mr-auto">
           <h2 className="bg-brown-700 p-2 font-display text-2xl sm:text-4xl tracking-wider shadow-solid text-center">
@@ -157,21 +166,21 @@ export default function PlayerDetails({
           onClick={onStartConversation}
         >
           <div className="h-full bg-clay-700 text-center">
-            <span>Start conversation</span>
+            <span>Начать разговор</span>
           </div>
         </a>
       )}
       {waitingForAccept && (
         <a className="mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto opacity-50">
           <div className="h-full bg-clay-700 text-center">
-            <span>Waiting for accept...</span>
+            <span>Ждём ответа...</span>
           </div>
         </a>
       )}
       {waitingForNearby && (
         <a className="mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto opacity-50">
           <div className="h-full bg-clay-700 text-center">
-            <span>Walking over...</span>
+            <span>Идёт к тебе...</span>
           </div>
         </a>
       )}
@@ -184,7 +193,7 @@ export default function PlayerDetails({
           onClick={onLeaveConversation}
         >
           <div className="h-full bg-clay-700 text-center">
-            <span>Leave conversation</span>
+            <span>Свалить из разговора</span>
           </div>
         </a>
       )}
@@ -198,7 +207,7 @@ export default function PlayerDetails({
             onClick={onAcceptInvite}
           >
             <div className="h-full bg-clay-700 text-center">
-              <span>Accept</span>
+              <span>Принять</span>
             </div>
           </a>
           <a
@@ -209,7 +218,7 @@ export default function PlayerDetails({
             onClick={onRejectInvite}
           >
             <div className="h-full bg-clay-700 text-center">
-              <span>Reject</span>
+              <span>Послать</span>
             </div>
           </a>
         </>
@@ -224,11 +233,11 @@ export default function PlayerDetails({
       <div className="desc my-6">
         <p className="leading-tight -m-4 bg-brown-700 text-base sm:text-sm">
           {!isMe && playerDescription?.description}
-          {isMe && <i>This is you!</i>}
+          {isMe && <i>Это ты, дурачок!</i>}
           {!isMe && inConversationWithMe && (
             <>
               <br />
-              <br />(<i>Conversing with you!</i>)
+              <br />(<i>Трындит с тобой!</i>)
             </>
           )}
         </p>
@@ -246,7 +255,7 @@ export default function PlayerDetails({
       {!playerConversation && previousConversation && (
         <>
           <div className="box flex-grow">
-            <h2 className="bg-brown-700 text-lg text-center">Previous conversation</h2>
+            <h2 className="bg-brown-700 text-lg text-center">Прошлый разговор</h2>
           </div>
           <Messages
             worldId={worldId}

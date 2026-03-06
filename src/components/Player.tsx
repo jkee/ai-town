@@ -15,6 +15,32 @@ export type SelectElement = (element?: { kind: 'player'; id: GameId<'players'> }
 
 const logged = new Set<string>();
 
+// Spritesheet data for dynamically generated 96x128 spritesheets
+// Same layout as hardcoded characters: down(0), left(32), right(64), up(96)
+const generatedSpritesheetData = {
+  frames: {
+    down: { frame: { x: 0, y: 0, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+    down2: { frame: { x: 32, y: 0, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+    down3: { frame: { x: 64, y: 0, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+    left: { frame: { x: 0, y: 32, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+    left2: { frame: { x: 32, y: 32, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+    left3: { frame: { x: 64, y: 32, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+    right: { frame: { x: 0, y: 64, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+    right2: { frame: { x: 32, y: 64, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+    right3: { frame: { x: 64, y: 64, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+    up: { frame: { x: 0, y: 96, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+    up2: { frame: { x: 32, y: 96, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+    up3: { frame: { x: 64, y: 96, w: 32, h: 32 }, sourceSize: { w: 32, h: 32 }, spriteSourceSize: { x: 0, y: 0 } },
+  },
+  meta: { scale: '1' },
+  animations: {
+    left: ['left', 'left2', 'left3'],
+    right: ['right', 'right2', 'right3'],
+    up: ['up', 'up2', 'up3'],
+    down: ['down', 'down2', 'down3'],
+  },
+};
+
 export const Player = ({
   game,
   isViewer,
@@ -29,11 +55,13 @@ export const Player = ({
   onClick: SelectElement;
   historicalTime?: number;
 }) => {
-  const playerCharacter = game.playerDescriptions.get(player.id)?.character;
+  const playerDesc = game.playerDescriptions.get(player.id);
+  const playerCharacter = playerDesc?.character;
   if (!playerCharacter) {
     throw new Error(`Player ${player.id} has no character`);
   }
   const character = characters.find((c) => c.name === playerCharacter);
+  const dynamicSpriteSheetUrl = playerDesc?.spriteSheetUrl;
 
   const locationBuffer = game.world.historicalLocations?.get(player.id);
   const historicalLocation = useHistoricalValue<Location>(
@@ -42,7 +70,7 @@ export const Player = ({
     playerLocation(player),
     locationBuffer,
   );
-  if (!character) {
+  if (!character && !dynamicSpriteSheetUrl) {
     if (!logged.has(playerCharacter)) {
       logged.add(playerCharacter);
       toast.error(`Unknown character ${playerCharacter}`);
@@ -79,9 +107,9 @@ export const Player = ({
             : undefined
         }
         isViewer={isViewer}
-        textureUrl={character.textureUrl}
-        spritesheetData={character.spritesheetData}
-        speed={character.speed}
+        textureUrl={dynamicSpriteSheetUrl || character!.textureUrl}
+        spritesheetData={dynamicSpriteSheetUrl ? generatedSpritesheetData : character!.spritesheetData}
+        speed={character?.speed ?? 0.1}
         onClick={() => {
           onClick({ kind: 'player', id: player.id });
         }}

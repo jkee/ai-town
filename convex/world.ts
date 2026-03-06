@@ -11,6 +11,7 @@ import {
 import { agentId, playerId } from './aiTown/ids';
 import { kickEngine, startEngine, stopEngine } from './aiTown/main';
 import { engineInsertInput } from './engine/abstractGame';
+import { internal } from './_generated/api';
 
 export const defaultWorldStatus = query({
   handler: async (ctx) => {
@@ -132,7 +133,7 @@ export const joinWorld = mutation({
     return await insertInput(ctx, world._id, 'join', {
       name,
       character: characters[Math.floor(Math.random() * characters.length)].name,
-      description: `${DEFAULT_NAME} is a human player`,
+      description: `${DEFAULT_NAME} — зритель, который забрёл в цирк`,
       // description: `${identity.givenName} is a human player`,
       tokenIdentifier: DEFAULT_NAME,
     });
@@ -296,6 +297,23 @@ export const removeAgent = mutation({
     // Remove the agent from the running world
     return await insertInput(ctx, args.worldId, 'removeAgent', {
       agentId: args.agentId,
+    });
+  },
+});
+
+export const generateAndCreateAgent = mutation({
+  args: {
+    worldId: v.id('worlds'),
+    prompt: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const world = await ctx.db.get(args.worldId);
+    if (!world) {
+      throw new ConvexError(`Invalid world ID: ${args.worldId}`);
+    }
+    await ctx.scheduler.runAfter(0, internal.aiTown.generateAgentAction.generateAgent, {
+      worldId: args.worldId,
+      prompt: args.prompt,
     });
   },
 });

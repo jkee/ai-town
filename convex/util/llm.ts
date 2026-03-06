@@ -1,17 +1,18 @@
 // That's right! No imports and no dependencies 🤯
 
 const OPENAI_EMBEDDING_DIMENSION = 1536;
+const OPENROUTER_EMBEDDING_DIMENSION = 1536;
 const TOGETHER_EMBEDDING_DIMENSION = 768;
 const OLLAMA_EMBEDDING_DIMENSION = 1024;
 
-export const EMBEDDING_DIMENSION: number = OLLAMA_EMBEDDING_DIMENSION;
+export const EMBEDDING_DIMENSION: number = OPENROUTER_EMBEDDING_DIMENSION;
 
 export function detectMismatchedLLMProvider() {
   switch (EMBEDDING_DIMENSION) {
-    case OPENAI_EMBEDDING_DIMENSION:
-      if (!process.env.OPENAI_API_KEY) {
+    case OPENROUTER_EMBEDDING_DIMENSION:
+      if (!process.env.OPENROUTER_API_KEY && !process.env.OPENAI_API_KEY) {
         throw new Error(
-          "Are you trying to use OpenAI? If so, run: npx convex env set OPENAI_API_KEY 'your-key'",
+          "Set OPENROUTER_API_KEY: npx convex env set OPENROUTER_API_KEY 'your-key'",
         );
       }
       break;
@@ -35,7 +36,7 @@ export function detectMismatchedLLMProvider() {
 }
 
 export interface LLMConfig {
-  provider: 'openai' | 'together' | 'ollama' | 'custom';
+  provider: 'openai' | 'openrouter' | 'together' | 'ollama' | 'custom';
   url: string; // Should not have a trailing slash
   chatModel: string;
   embeddingModel: string;
@@ -45,6 +46,17 @@ export interface LLMConfig {
 
 export function getLLMConfig(): LLMConfig {
   let provider = process.env.LLM_PROVIDER;
+  // OpenRouter (check first since it's the default)
+  if (provider ? provider === 'openrouter' : process.env.OPENROUTER_API_KEY) {
+    return {
+      provider: 'openrouter',
+      url: 'https://openrouter.ai/api',
+      chatModel: process.env.OPENROUTER_CHAT_MODEL ?? 'google/gemini-2.0-flash-001',
+      embeddingModel: process.env.OPENROUTER_EMBEDDING_MODEL ?? 'openai/text-embedding-ada-002',
+      stopWords: [],
+      apiKey: process.env.OPENROUTER_API_KEY,
+    };
+  }
   if (provider ? provider === 'openai' : process.env.OPENAI_API_KEY) {
     if (EMBEDDING_DIMENSION !== OPENAI_EMBEDDING_DIMENSION) {
       throw new Error('EMBEDDING_DIMENSION must be 1536 for OpenAI');
@@ -96,9 +108,6 @@ export function getLLMConfig(): LLMConfig {
         `. See convex/util/llm.ts for details.`,
     );
   }
-  // Alternative embedding model:
-  // embeddingModel: 'llama3'
-  // const OLLAMA_EMBEDDING_DIMENSION = 4096,
   return {
     provider: 'ollama',
     url: process.env.OLLAMA_HOST ?? 'http://127.0.0.1:11434',
@@ -139,8 +148,11 @@ export async function chatCompletion(
 ) {
   const config = getLLMConfig();
   body.model = body.model ?? config.chatModel;
-  const stopWords = body.stop ? (typeof body.stop === 'string' ? [body.stop] : body.stop) : [];
-  if (config.stopWords) stopWords.push(...config.stopWords);
+  const baseStopWords = body.stop ? (typeof body.stop === 'string' ? [body.stop] : [...body.stop]) : [];
+  if (config.stopWords) baseStopWords.push(...config.stopWords);
+  // Gemini supports max 16 stop sequences
+  const stopWords = baseStopWords.slice(0, 16);
+  body.stop = stopWords;
   console.log(body);
   const {
     result: content,

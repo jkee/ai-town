@@ -31,7 +31,7 @@ export default function AgentCreator({
 
   const handleCreate = async () => {
     if (!name.trim() || !identity.trim() || !plan.trim()) {
-      toast.error('Please fill in all fields');
+      toast.error('Заполни все поля, бестолочь');
       return;
     }
     try {
@@ -42,13 +42,13 @@ export default function AgentCreator({
         identity: identity.trim(),
         plan: plan.trim(),
       });
-      toast.success(`Agent "${name}" created!`);
+      toast.success(`"${name}" нанят в цирк!`);
       setName('');
       setIdentity('');
       setPlan('');
       setModalOpen(false);
     } catch (e: any) {
-      toast.error(e.message || 'Failed to create agent');
+      toast.error(e.message || 'Не удалось нанять');
     }
   };
 
@@ -58,12 +58,12 @@ export default function AgentCreator({
       return agent && d.playerId === agent.playerId;
     });
     const agentName = desc?.name || agentId;
-    if (!confirm(`Remove agent "${agentName}"?`)) return;
+    if (!confirm(`Выгнать "${agentName}" из цирка?`)) return;
     try {
       await removeAgentMutation({ worldId, agentId });
-      toast.success(`Agent "${agentName}" removed`);
+      toast.success(`"${agentName}" выгнан из цирка`);
     } catch (e: any) {
-      toast.error(e.message || 'Failed to remove agent');
+      toast.error(e.message || 'Не удалось выгнать');
     }
   };
 
@@ -76,7 +76,7 @@ export default function AgentCreator({
         <div className="inline-block bg-clay-700">
           <span>
             <div className="inline-flex h-full items-center gap-4 px-2">
-              Agents
+              Артисты
             </div>
           </span>
         </div>
@@ -86,19 +86,19 @@ export default function AgentCreator({
         isOpen={modalOpen}
         onRequestClose={() => setModalOpen(false)}
         style={modalStyles}
-        contentLabel="Agent Manager"
+        contentLabel="Управление артистами"
         ariaHideApp={false}
       >
         <div className="font-body">
           <h1 className="text-center text-4xl font-bold font-display game-title mb-4">
-            Manage Agents
+            Управление артистами
           </h1>
 
           {/* Current agents list */}
           <div className="mb-6">
-            <h2 className="text-2xl mb-2">Active Agents ({agents.length})</h2>
+            <h2 className="text-2xl mb-2">На арене ({agents.length})</h2>
             {agents.length === 0 && (
-              <p className="text-gray-400 text-sm">No agents in the world</p>
+              <p className="text-gray-400 text-sm">Арена пуста, все разбежались</p>
             )}
             <div className="space-y-2 max-h-40 overflow-y-auto">
               {agents.map((agent) => {
@@ -119,7 +119,7 @@ export default function AgentCreator({
                       onClick={() => handleRemove(agent.id)}
                       className="text-red-400 hover:text-red-300 text-sm px-2 py-1"
                     >
-                      Remove
+                      Выгнать
                     </button>
                   </div>
                 );
@@ -128,20 +128,20 @@ export default function AgentCreator({
           </div>
 
           {/* Create new agent form */}
-          <h2 className="text-2xl mb-2">Create New Agent</h2>
+          <h2 className="text-2xl mb-2">Нанять нового артиста</h2>
           <div className="space-y-3">
             <div>
-              <label className="block text-sm mb-1">Name</label>
+              <label className="block text-sm mb-1">Погоняло</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full p-2 bg-brown-900 text-white border border-brown-700 rounded"
-                placeholder="e.g. Alex"
+                placeholder="напр. Клоун-Алкаш"
               />
             </div>
             <div>
-              <label className="block text-sm mb-1">Character Sprite</label>
+              <label className="block text-sm mb-1">Внешность</label>
               <select
                 value={character}
                 onChange={(e) => setCharacter(e.target.value)}
@@ -155,21 +155,21 @@ export default function AgentCreator({
               </select>
             </div>
             <div>
-              <label className="block text-sm mb-1">Identity</label>
+              <label className="block text-sm mb-1">Личность</label>
               <textarea
                 value={identity}
                 onChange={(e) => setIdentity(e.target.value)}
                 className="w-full p-2 bg-brown-900 text-white border border-brown-700 rounded h-24"
-                placeholder="Describe who this agent is, their personality, background..."
+                placeholder="Опиши кто это такой, его характер, повадки, странности..."
               />
             </div>
             <div>
-              <label className="block text-sm mb-1">Plan</label>
+              <label className="block text-sm mb-1">Цель в жизни</label>
               <textarea
                 value={plan}
                 onChange={(e) => setPlan(e.target.value)}
                 className="w-full p-2 bg-brown-900 text-white border border-brown-700 rounded h-16"
-                placeholder="What does this agent want to do? e.g. 'You want to make friends.'"
+                placeholder="Чего этот персонаж хочет? напр. 'Ты хочешь напиться и устроить скандал.'"
               />
             </div>
             <div className="flex gap-3 pt-2">
@@ -177,13 +177,13 @@ export default function AgentCreator({
                 onClick={handleCreate}
                 className="button text-white shadow-solid text-lg pointer-events-auto"
               >
-                <div className="inline-block bg-clay-700 px-4 py-1">Create Agent</div>
+                <div className="inline-block bg-clay-700 px-4 py-1">Нанять</div>
               </button>
               <button
                 onClick={() => setModalOpen(false)}
                 className="button text-white shadow-solid text-lg pointer-events-auto"
               >
-                <div className="inline-block bg-brown-700 px-4 py-1">Close</div>
+                <div className="inline-block bg-brown-700 px-4 py-1">Закрыть</div>
               </button>
             </div>
           </div>
