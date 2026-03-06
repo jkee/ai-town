@@ -289,10 +289,10 @@ Output: ONE image with the 3×4 sprite grid on solid green.`;
     for (let col = 0; col < 3; col++) {
       // Fix frames that contain duplicate sprites side-by-side
       const frame = fixDuplicateFrame(frames[row * 3 + col], bg);
-      // Resize each frame to 32×32
-      const resized = resizeNearestNeighbor(frame, 32, 32);
+      // Crop to content, resize to fit, and center in 32×32
+      const centered = cropAndCenterFrame(frame, 32, 32, bg);
       // Remove background
-      const clean = removeBackground(resized, 32, 32, bg);
+      const clean = removeBackground(centered, 32, 32, bg);
       blitFrame(sheetData, 96, clean, col * 32, row * 32, 32, 32);
     }
   }
@@ -592,6 +592,67 @@ function fixDuplicateFrame(frame: RawImage, bg: BgColor): RawImage {
   }
 
   return frame;
+}
+
+/**
+ * Crop a frame to its content bounding box, resize to fit within targetW×targetH
+ * while maintaining aspect ratio, and center in the target.
+ * This prevents head-clipping when the character isn't centered in its grid cell.
+ */
+function cropAndCenterFrame(frame: RawImage, targetW: number, targetH: number, bg: BgColor): Uint8Array {
+  const { width, height, data } = frame;
+  const threshold = 80;
+
+  // Find content bounding box
+  let minX = width, maxX = 0, minY = height, maxY = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      if (colorDistance(data[idx], data[idx + 1], data[idx + 2], bg.r, bg.g, bg.b) >= threshold) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  // No content found — just resize the whole frame
+  if (maxX <= minX || maxY <= minY) {
+    return resizeNearestNeighbor(frame, targetW, targetH);
+  }
+
+  // Crop to content
+  const cropW = maxX - minX + 1;
+  const cropH = maxY - minY + 1;
+
+  // Calculate scale to fit content into target while preserving aspect ratio
+  const scale = Math.min(targetW / cropW, targetH / cropH);
+  const scaledW = Math.max(1, Math.round(cropW * scale));
+  const scaledH = Math.max(1, Math.round(cropH * scale));
+
+  // Center offset in target
+  const offsetX = Math.floor((targetW - scaledW) / 2);
+  const offsetY = Math.floor((targetH - scaledH) / 2);
+
+  // Create target filled with transparent pixels
+  const result = new Uint8Array(targetW * targetH * 4);
+
+  // Nearest-neighbor resize from cropped content directly into centered position
+  for (let y = 0; y < scaledH; y++) {
+    for (let x = 0; x < scaledW; x++) {
+      const srcX = minX + Math.floor((x / scaledW) * cropW);
+      const srcY = minY + Math.floor((y / scaledH) * cropH);
+      const srcIdx = (srcY * width + srcX) * 4;
+      const dstIdx = ((offsetY + y) * targetW + (offsetX + x)) * 4;
+      result[dstIdx] = data[srcIdx];
+      result[dstIdx + 1] = data[srcIdx + 1];
+      result[dstIdx + 2] = data[srcIdx + 2];
+      result[dstIdx + 3] = data[srcIdx + 3];
+    }
+  }
+
+  return result;
 }
 
 function resizeNearestNeighbor(source: RawImage, targetW: number, targetH: number): Uint8Array {
