@@ -46,6 +46,7 @@ export const getBackgroundMusic = query({
 export const enqueueBackgroundMusicGeneration = internalAction({
   handler: async (ctx): Promise<void> => {
     if (!replicateAvailable()) {
+      console.log('REPLICATE_API_TOKEN not set, skipping music generation.');
       return;
     }
     const worldStatus = await ctx.runQuery(api.world.defaultWorldStatus);
@@ -53,8 +54,45 @@ export const enqueueBackgroundMusicGeneration = internalAction({
       console.log('No active default world, returning.');
       return;
     }
-    // TODO: MusicGen-Large on Replicate only allows 30 seconds. Use MusicGen-Small for longer?
-    await generateMusic('16-bit RPG adventure game with wholesome vibe', 30);
+    const prompt = 'dark techno rave festival, heavy bass, hypnotic synths, 130 bpm, underground club atmosphere, pulsing kick drums';
+    console.log(`Generating rave music: "${prompt}"`);
+
+    const replicate = client();
+    const prediction = await replicate.predictions.create({
+      version: '7a76a8258b23fae65c5a22debb8841d1d7e816b75c2f24218cd2bd8573787906',
+      input: {
+        model_version: 'large',
+        prompt,
+        duration: 30,
+        normalization_strategy: 'peak',
+        top_k: 250,
+        top_p: 0,
+        temperature: 1,
+        classifer_free_gudance: 3,
+        output_format: 'mp3',
+        seed: -1,
+      },
+    });
+
+    // Poll until done
+    let result = prediction;
+    while (result.status !== 'succeeded' && result.status !== 'failed' && result.status !== 'canceled') {
+      await new Promise((r) => setTimeout(r, 3000));
+      result = await replicate.predictions.get(prediction.id);
+      console.log(`Music generation status: ${result.status}`);
+    }
+
+    if (result.status !== 'succeeded' || !result.output) {
+      console.error('Music generation failed:', result.status, result.error);
+      return;
+    }
+
+    // Download and store the generated music
+    const response = await fetch(result.output);
+    const music = await response.blob();
+    const storageId = await ctx.storage.store(music);
+    await ctx.runMutation(internal.music.insertMusic, { type: 'background', storageId });
+    console.log('Rave music generated and stored successfully!');
   },
 });
 
