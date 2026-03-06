@@ -1,14 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { characters } from '../../data/characters';
 import { toast } from 'react-toastify';
 import { useServerGame } from '../hooks/serverGame';
 import ReactModal from 'react-modal';
 import Button from './buttons/Button';
 import starImg from '../../assets/star.svg';
-
-const characterOptions = characters.map((c) => c.name);
 
 export default function AgentCreator() {
   const worldStatus = useQuery(api.world.defaultWorldStatus);
@@ -16,7 +13,6 @@ export default function AgentCreator() {
   const game = useServerGame(worldId);
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState('');
-  const [character, setCharacter] = useState(characterOptions[0]);
   const [identity, setIdentity] = useState('');
   const [plan, setPlan] = useState('');
 
@@ -40,7 +36,7 @@ export default function AgentCreator() {
       await createAgent({
         worldId,
         name: name.trim(),
-        character,
+        character: 'generated',
         identity: identity.trim(),
         plan: plan.trim(),
       });
@@ -132,20 +128,6 @@ export default function AgentCreator() {
                 className="w-full p-2 bg-brown-900 text-white border border-brown-700 rounded"
                 placeholder="напр. Клоун-Алкаш"
               />
-            </div>
-            <div>
-              <label className="block text-sm mb-1">Внешность</label>
-              <select
-                value={character}
-                onChange={(e) => setCharacter(e.target.value)}
-                className="w-full p-2 bg-brown-900 text-white border border-brown-700 rounded"
-              >
-                {characterOptions.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
             </div>
             <div>
               <label className="block text-sm mb-1">Личность</label>

@@ -71,6 +71,8 @@ export const aiTownTables = {
     character: v.string(),
     identity: v.string(),
     plan: v.string(),
+    portraitUrl: v.optional(v.string()),
+    spriteSheetUrl: v.optional(v.string()),
   }).index('worldId', ['worldId']),
 
   // The agent layer wants to know what the last (completed) conversation was between two players,

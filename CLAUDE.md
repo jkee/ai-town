@@ -4,6 +4,13 @@
 
 Fork of [a]i-town](https://github.com/a16z-infra/ai-town) turned into **БЛЯДСКИЙ ЦИРК** — a circus-themed virtual world where AI agents live, talk, and cause chaos. All UI is in Russian.
 
+## CRITICAL SECURITY RULES
+
+- **NEVER hardcode API keys, secrets, or credentials in source files.** Always use environment variables.
+- API keys go in `.env` (gitignored). Scripts read from `process.env.OPENROUTER_API_KEY`.
+- If a key is needed, fail with a clear error message, never fall back to a hardcoded key.
+- Before committing, always check for leaked secrets: `grep -r 'sk-or-v1\|sk-ant\|Bearer.*sk-' --include='*.ts' --include='*.mjs' --include='*.js'`
+
 ## Quick Start
 
 ```bash

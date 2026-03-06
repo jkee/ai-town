@@ -7,7 +7,8 @@ import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 
-const API_KEY = process.env.OPENROUTER_API_KEY || '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';
+const API_KEY = process.env.OPENROUTER_API_KEY;
+if (!API_KEY) { console.error('Set OPENROUTER_API_KEY env var'); process.exit(1); }
 const MODEL = 'google/gemini-3-pro-image-preview';
 const OUT = path.join(process.cwd(), 'scripts', 'generated', 'tiles');
 

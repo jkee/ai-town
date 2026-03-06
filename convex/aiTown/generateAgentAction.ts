@@ -82,6 +82,48 @@ export const generateAgent = internalAction({
   },
 });
 
+// Generate sprites for a pre-defined character (used by init for default agents)
+export const generateDefaultAgent = internalAction({
+  args: {
+    worldId: v.id('worlds'),
+    name: v.string(),
+    identity: v.string(),
+    plan: v.string(),
+    portraitPrompt: v.string(),
+  },
+  handler: async (ctx, args) => {
+    console.log(`Generating sprites for default agent: ${args.name}`);
+
+    const [portraitResult, spriteResult] = await Promise.allSettled([
+      generatePortrait(ctx, args.portraitPrompt),
+      generateSpriteSheetFromPixelArt(ctx, args.portraitPrompt),
+    ]);
+
+    const portraitStorageId = portraitResult.status === 'fulfilled' ? portraitResult.value : undefined;
+    if (portraitResult.status === 'rejected') {
+      console.error(`Portrait failed for ${args.name}:`, portraitResult.reason);
+    }
+
+    if (spriteResult.status === 'rejected') {
+      console.error(`Spritesheet failed for ${args.name}:`, spriteResult.reason);
+      throw new Error(`Spritesheet generation failed for ${args.name}: ${spriteResult.reason}`);
+    }
+
+    await ctx.runMutation(internal.aiTown.generateAgent.createGeneratedAgent, {
+      worldId: args.worldId,
+      name: args.name,
+      character: 'generated',
+      identity: args.identity,
+      plan: args.plan,
+      portraitStorageId,
+      spriteSheetStorageId: spriteResult.value,
+    });
+
+    console.log(`Default agent ${args.name} created with generated sprites`);
+    return { name: args.name };
+  },
+});
+
 // ─── Image generation helpers ───
 
 interface ImageData {

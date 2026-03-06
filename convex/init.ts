@@ -35,32 +35,28 @@ const init = mutation({
         .collect();
 
       if (savedAgents.length > 0) {
-        // Restore from saved agents
+        // Restore from saved agents (includes sprite URLs if previously generated)
         for (const agent of savedAgents) {
           await insertInput(ctx, worldStatus.worldId, 'createAgent', {
             name: agent.name,
             character: agent.character,
             identity: agent.identity,
             plan: agent.plan,
+            portraitUrl: agent.portraitUrl,
+            spriteSheetUrl: agent.spriteSheetUrl,
           });
         }
       } else {
-        // First run: seed from hardcoded Descriptions and save them
+        // First run: generate sprites for each default agent via AI pipeline
         const toCreate = args.numAgents !== undefined ? args.numAgents : Descriptions.length;
         for (let i = 0; i < toCreate; i++) {
           const desc = Descriptions[i % Descriptions.length];
-          await insertInput(ctx, worldStatus.worldId, 'createAgent', {
-            name: desc.name,
-            character: desc.character,
-            identity: desc.identity,
-            plan: desc.plan,
-          });
-          await ctx.db.insert('savedAgents', {
+          await ctx.scheduler.runAfter(0, internal.aiTown.generateAgentAction.generateDefaultAgent, {
             worldId: worldStatus.worldId,
             name: desc.name,
-            character: desc.character,
             identity: desc.identity,
             plan: desc.plan,
+            portraitPrompt: desc.portraitPrompt,
           });
         }
       }

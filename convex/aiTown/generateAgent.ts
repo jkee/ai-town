@@ -30,6 +30,8 @@ export const createGeneratedAgent = internalMutation({
       character: args.character,
       identity: args.identity,
       plan: args.plan,
+      portraitUrl,
+      spriteSheetUrl,
     });
 
     await insertInput(ctx, args.worldId, 'createAgent', {

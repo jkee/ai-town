@@ -42,3 +42,10 @@ dist
 
 convex-local*
 convex_local*
+
+# Generated tile assets (build artifacts)
+scripts/generated/*.png
+scripts/generated/*.jpeg
+scripts/generated/*.json
+scripts/generated/tiles/
+!scripts/generated/tiles/tile_mapping.json

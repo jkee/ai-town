@@ -1,6 +1,5 @@
 import { ConvexError, v } from 'convex/values';
 import { internalMutation, mutation, query } from './_generated/server';
-import { characters } from '../data/characters';
 import { insertInput } from './aiTown/insertInput';
 import {
   DEFAULT_NAME,
@@ -132,7 +131,7 @@ export const joinWorld = mutation({
     // const { tokenIdentifier } = identity;
     return await insertInput(ctx, world._id, 'join', {
       name,
-      character: characters[Math.floor(Math.random() * characters.length)].name,
+      character: 'generated',
       description: `${DEFAULT_NAME} — зритель, который забрёл в цирк`,
       // description: `${identity.givenName} is a human player`,
       tokenIdentifier: DEFAULT_NAME,
@@ -241,9 +240,9 @@ export const createAgent = mutation({
     if (!world) {
       throw new ConvexError(`Invalid world ID: ${args.worldId}`);
     }
-    // Validate character exists
-    if (!characters.find((c) => c.name === args.character)) {
-      throw new ConvexError(`Invalid character: ${args.character}`);
+    // All agents now use 'generated' character with AI spritesheets
+    if (args.character !== 'generated') {
+      throw new ConvexError(`Invalid character: ${args.character}. Use 'generated'.`);
     }
     // Save the agent config for persistence
     await ctx.db.insert('savedAgents', {

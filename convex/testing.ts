@@ -202,6 +202,20 @@ export const testConvo = internalAction({
   },
 });
 
+export const clearSavedAgents = mutation({
+  handler: async (ctx) => {
+    const { worldStatus } = await getDefaultWorld(ctx.db);
+    const agents = await ctx.db
+      .query('savedAgents')
+      .withIndex('worldId', (q) => q.eq('worldId', worldStatus.worldId))
+      .collect();
+    for (const agent of agents) {
+      await ctx.db.delete(agent._id);
+    }
+    console.log(`Cleared ${agents.length} saved agents`);
+  },
+});
+
 export const resetMap = mutation({
   handler: async (ctx) => {
     const { worldStatus } = await getDefaultWorld(ctx.db);
