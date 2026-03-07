@@ -4,6 +4,7 @@ import {
   DatabaseReader,
   internalAction,
   internalMutation,
+  internalQuery,
   mutation,
   query,
 } from './_generated/server';
@@ -199,6 +200,35 @@ export const testConvo = internalAction({
       'p:6' as GameId<'players'>,
     )) as any;
     return await a.readAll();
+  },
+});
+
+// Regenerate sprites for all saved agents using the current pipeline.
+// Run with: npx convex run testing:regenerateSprites
+// After regeneration, restart the world to pick up new sprites:
+//   npx convex run testing:stop && npx convex run testing:wipeAllTables && npx convex run init && npx convex run testing:resume
+export const regenerateSprites = internalAction({
+  handler: async (ctx) => {
+    const agents = await ctx.runQuery(internal.testing.listSavedAgents);
+    console.log(`Regenerating sprites for ${agents.length} saved agents...`);
+    for (const agent of agents) {
+      try {
+        await ctx.runAction(internal.aiTown.generateAgentAction.regenerateSprite, {
+          savedAgentId: agent._id,
+          description: agent.name,
+        });
+        console.log(`Regenerated sprite for: ${agent.name}`);
+      } catch (e: any) {
+        console.error(`Failed to regenerate sprite for ${agent.name}:`, e.message);
+      }
+    }
+    console.log('Sprite regeneration complete');
+  },
+});
+
+export const listSavedAgents = internalQuery({
+  handler: async (ctx) => {
+    return await ctx.db.query('savedAgents').collect();
   },
 });
 

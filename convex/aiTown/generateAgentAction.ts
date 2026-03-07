@@ -1,5 +1,5 @@
 import { v } from 'convex/values';
-import { internalAction } from '../_generated/server';
+import { internalAction, internalMutation } from '../_generated/server';
 import { chatCompletion, getLLMConfig, retryWithBackoff } from '../util/llm';
 import { internal } from '../_generated/api';
 import { decode as decodePng, encode as encodePng } from 'fast-png';
@@ -53,7 +53,7 @@ export const generateAgent = internalAction({
     // Generate portrait and spritesheet in parallel
     const [portraitResult, spriteResult] = await Promise.allSettled([
       generatePortrait(ctx, portraitDesc),
-      generateSpriteSheetFromPixelArt(ctx, portraitDesc),
+      generateSpriteSheetPerFrame(ctx, portraitDesc),
     ]);
 
     const portraitStorageId = portraitResult.status === 'fulfilled' ? portraitResult.value : undefined;
@@ -96,7 +96,7 @@ export const generateDefaultAgent = internalAction({
 
     const [portraitResult, spriteResult] = await Promise.allSettled([
       generatePortrait(ctx, args.portraitPrompt),
-      generateSpriteSheetFromPixelArt(ctx, args.portraitPrompt),
+      generateSpriteSheetPerFrame(ctx, args.portraitPrompt),
     ]);
 
     const portraitStorageId = portraitResult.status === 'fulfilled' ? portraitResult.value : undefined;
@@ -124,6 +124,49 @@ export const generateDefaultAgent = internalAction({
   },
 });
 
+// Regenerate sprite for an existing saved agent
+export const regenerateSprite = internalAction({
+  args: {
+    savedAgentId: v.id('savedAgents'),
+    description: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const [portraitResult, spriteResult] = await Promise.allSettled([
+      generatePortrait(ctx, args.description),
+      generateSpriteSheetPerFrame(ctx, args.description),
+    ]);
+
+    const portraitStorageId = portraitResult.status === 'fulfilled' ? portraitResult.value : undefined;
+    if (spriteResult.status === 'rejected') {
+      throw new Error(`Spritesheet failed: ${spriteResult.reason}`);
+    }
+
+    await ctx.runMutation(internal.aiTown.generateAgentAction.updateSavedAgentSprite, {
+      savedAgentId: args.savedAgentId,
+      spriteSheetStorageId: spriteResult.value,
+      portraitStorageId,
+    });
+  },
+});
+
+export const updateSavedAgentSprite = internalMutation({
+  args: {
+    savedAgentId: v.id('savedAgents'),
+    spriteSheetStorageId: v.string(),
+    portraitStorageId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const spriteSheetUrl = (await ctx.storage.getUrl(args.spriteSheetStorageId as any)) ?? undefined;
+    const patch: Record<string, string | undefined> = {};
+    if (spriteSheetUrl) patch.spriteSheetUrl = spriteSheetUrl;
+    if (args.portraitStorageId) {
+      const portraitUrl = (await ctx.storage.getUrl(args.portraitStorageId as any)) ?? undefined;
+      if (portraitUrl) patch.portraitUrl = portraitUrl;
+    }
+    await ctx.db.patch(args.savedAgentId, patch);
+  },
+});
+
 // ─── Image generation helpers ───
 
 interface ImageData {
@@ -131,6 +174,7 @@ interface ImageData {
   mimeType: string;
 }
 
+/** Generate an image from text-only prompt */
 async function generateImageWithMeta(apiKey: string, prompt: string): Promise<ImageData> {
   const { result } = await retryWithBackoff(async () => {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -158,6 +202,56 @@ async function generateImageWithMeta(apiKey: string, prompt: string): Promise<Im
   const extracted = extractBase64ImageWithType(result);
   if (!extracted.base64) {
     throw new Error('No image in response');
+  }
+  return extracted as ImageData;
+}
+
+/** Generate an image using a reference image + text prompt */
+async function generateImageWithReference(
+  apiKey: string,
+  prompt: string,
+  referenceBase64: string,
+  referenceMimeType: string,
+): Promise<ImageData> {
+  const { result } = await retryWithBackoff(async () => {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: IMAGE_MODEL,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${referenceMimeType};base64,${referenceBase64}`,
+                },
+              },
+              { type: 'text', text: prompt },
+            ],
+          },
+        ],
+        modalities: ['image', 'text'],
+      }),
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      throw {
+        retry: response.status === 429 || response.status >= 500,
+        error: new Error(`Image gen with ref failed (${response.status}): ${error}`),
+      };
+    }
+    return await response.json();
+  });
+
+  const extracted = extractBase64ImageWithType(result);
+  if (!extracted.base64) {
+    throw new Error('No image in reference-based response');
   }
   return extracted as ImageData;
 }
@@ -204,6 +298,14 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 /** Decode image bytes (JPEG or PNG) into RGBA pixel buffer */
 function decodeImage(bytes: Uint8Array, mimeType: string): RawImage {
   if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
@@ -236,245 +338,430 @@ async function generatePortrait(ctx: any, description: string): Promise<string> 
   return await ctx.storage.store(blob);
 }
 
-// ─── Spritesheet generation ───
+// ─── Per-frame spritesheet generation ───
 
-async function generateSpriteSheetFromPixelArt(ctx: any, description: string): Promise<string> {
+/** Base prompt for generating the first (front idle) frame from text only */
+function frontIdlePrompt(description: string): string {
+  return `Create exactly one pixel-art JRPG overworld sprite.
+Full body, centered, standing neutral, orthographic front view (facing toward viewer).
+Chibi proportions (head ~30% of height).
+Crisp hard-edged pixel art, 16-20 color palette, dark 1-pixel outline.
+Canvas 128x128, character ~80x96 pixels, 12-pixel margin on all sides.
+Flat solid #FF00FF magenta background. No shadows, no text, no borders, no extra objects.
+NOT a sprite sheet — single character only.
+Character: ${description}`;
+}
+
+/** Prompt for generating a variant from a reference image */
+function variantPrompt(direction: string, pose: string): string {
+  return `Using the reference image, draw the same exact character with same costume, colors, proportions, head size, and scale.
+${direction}-facing ${pose} view.
+Keep same size, baseline, framing, palette, and character identity.
+Crisp hard-edged pixel art, dark 1-pixel outline.
+Canvas 128x128, character ~80x96 pixels, 12-pixel margin on all sides.
+Flat solid #FF00FF magenta background only. No shadow, no text. Do not crop feet or hair.
+NOT a sprite sheet — single character only.`;
+}
+
+/** Text-only fallback prompt for when image-in is not supported */
+function textOnlyVariantPrompt(description: string, direction: string, pose: string): string {
+  return `Create exactly one pixel-art JRPG overworld sprite.
+Full body, centered, ${pose}, orthographic ${direction} view.
+Chibi proportions (head ~30% of height).
+Crisp hard-edged pixel art, 16-20 color palette, dark 1-pixel outline.
+Canvas 128x128, character ~80x96 pixels, 12-pixel margin on all sides.
+Flat solid #FF00FF magenta background. No shadows, no text, no borders, no extra objects.
+NOT a sprite sheet — single character only.
+Character: ${description}`;
+}
+
+/** Prompt for generating a walking step pose */
+function stepPosePrompt(direction: string): string {
+  return `Using the reference image, draw the same character in a single walking contact pose for a 3-frame JRPG walk cycle, ${direction}-facing.
+One foot forward, other back, opposite arm swing.
+Head and torso nearly unchanged. Same scale, baseline, framing, palette.
+Crisp hard-edged pixel art, dark 1-pixel outline.
+Canvas 128x128, character ~80x96 pixels, 12-pixel margin on all sides.
+Flat solid #FF00FF magenta background. No shadow, no text. Do not crop.
+NOT a sprite sheet — single character only.`;
+}
+
+/** Text-only fallback for step pose */
+function textOnlyStepPrompt(description: string, direction: string): string {
+  return `Create exactly one pixel-art JRPG overworld sprite in a walking pose.
+Full body, centered, one foot forward other back with opposite arm swing.
+Orthographic ${direction} view. Walking contact pose for a JRPG walk cycle.
+Chibi proportions (head ~30% of height).
+Crisp hard-edged pixel art, 16-20 color palette, dark 1-pixel outline.
+Canvas 128x128, character ~80x96 pixels, 12-pixel margin on all sides.
+Flat solid #FF00FF magenta background. No shadows, no text, no borders, no extra objects.
+NOT a sprite sheet — single character only.
+Character: ${description}`;
+}
+
+/** Try image-in generation, fall back to text-only if it fails */
+async function generateWithFallback(
+  apiKey: string,
+  refPrompt: string,
+  fallbackPrompt: string,
+  refBase64: string,
+  refMimeType: string,
+): Promise<ImageData> {
+  try {
+    return await generateImageWithReference(apiKey, refPrompt, refBase64, refMimeType);
+  } catch (e: any) {
+    console.warn(`Image-in generation failed, falling back to text-only: ${e.message}`);
+    return await generateImageWithMeta(apiKey, fallbackPrompt);
+  }
+}
+
+/**
+ * Per-frame sprite generation pipeline.
+ *
+ * Generates 4 key frames via API, derives the rest programmatically:
+ * 1. Front idle (text-only)
+ * 2. Back idle (image-in with front as reference)
+ * 3. Right idle (image-in with front as reference)
+ * 4. Right step (image-in with right idle as reference)
+ * 5. Left = mirror of right
+ * 6. Walk frames = programmatic shifts from idle
+ *
+ * Assembles into 96x128 spritesheet (3 cols x 4 rows of 32x32).
+ */
+async function generateSpriteSheetPerFrame(ctx: any, description: string): Promise<string> {
   const config = getLLMConfig();
+  const apiKey = config.apiKey!;
 
-  // Ask the model to generate a complete RPG sprite sheet
-  const prompt = `Create a pixel art RPG character sprite sheet.
+  // Step 1: Generate front idle (text-only, no reference)
+  console.log('Sprite: generating front idle...');
+  const frontResult = await generateImageWithMeta(apiKey, frontIdlePrompt(description));
+  const frontBytes = base64ToUint8Array(frontResult.base64);
+  const frontRaw = decodeImage(frontBytes, frontResult.mimeType);
+  const frontProcessed = processFrame(frontRaw);
 
-CRITICAL LAYOUT: The image must contain EXACTLY 3 columns and 4 rows of sprites = 12 frames total. NOT more, NOT less.
+  // Encode front idle as PNG for use as reference in subsequent calls.
+  // Fill transparent pixels with magenta so the model sees character on magenta
+  // (otherwise transparent = black, confusing the model about background color).
+  const frontRefBase64 = encodeRefPng(frontProcessed);
 
-Background: solid bright green #00FF00 everywhere.
+  // Step 2 & 3: Generate back idle and right idle in parallel
+  // Try image-in with front as reference, fall back to text-only if unsupported
+  console.log('Sprite: generating back + right idle...');
+  const [backResult, rightResult] = await Promise.all([
+    generateWithFallback(
+      apiKey,
+      variantPrompt('back (facing away from viewer)', 'standing neutral'),
+      textOnlyVariantPrompt(description, 'back (facing away from viewer)', 'standing neutral'),
+      frontRefBase64, 'image/png',
+    ),
+    generateWithFallback(
+      apiKey,
+      variantPrompt('right', 'standing neutral'),
+      textOnlyVariantPrompt(description, 'right', 'standing neutral'),
+      frontRefBase64, 'image/png',
+    ),
+  ]);
 
-Grid layout (3 wide × 4 tall):
-  Col1        Col2        Col3
-Row1: walk-left   stand      walk-right   (facing DOWN/toward viewer)
-Row2: walk-left   stand      walk-right   (facing LEFT)
-Row3: walk-left   stand      walk-right   (facing RIGHT)
-Row4: walk-left   stand      walk-right   (facing UP/away from viewer)
+  const backRaw = decodeImage(base64ToUint8Array(backResult.base64), backResult.mimeType);
+  const backProcessed = processFrame(backRaw);
 
-Rules:
-- ONLY 3 columns, ONLY 4 rows. Do NOT add extra frames.
-- 16-bit pixel art, retro SNES RPG style (Final Fantasy, Chrono Trigger)
-- Chibi proportions (big head, small body), ~32px per frame
-- Each frame SAME size, evenly spaced in a clean grid with green gaps between them
-- Bright saturated colors, solid green (#00FF00) background, NO gradients
-- Same character in all 12 frames (consistent outfit, colors, proportions)
-- NO text, NO labels, NO borders, NO extra decoration
+  const rightRaw = decodeImage(base64ToUint8Array(rightResult.base64), rightResult.mimeType);
+  const rightProcessed = processFrame(rightRaw);
 
-Character: ${description}
+  // Step 4: Generate right step (references right idle)
+  console.log('Sprite: generating right step...');
+  const rightRefBase64 = encodeRefPng(rightProcessed);
+  const rightStepResult = await generateWithFallback(
+    apiKey,
+    stepPosePrompt('right'),
+    textOnlyStepPrompt(description, 'right'),
+    rightRefBase64, 'image/png',
+  );
+  const rightStepRaw = decodeImage(base64ToUint8Array(rightStepResult.base64), rightStepResult.mimeType);
+  const rightStepProcessed = processFrame(rightStepRaw);
 
-Output: ONE image with the 3×4 sprite grid on solid green.`;
+  // Step 5: Derive left by mirroring right
+  const leftProcessed = mirrorFrame(rightProcessed);
+  const leftStepProcessed = mirrorFrame(rightStepProcessed);
 
-  const { base64, mimeType } = await generateImageWithMeta(config.apiKey!, prompt);
-  const binaryData = base64ToUint8Array(base64);
-  const source = decodeImage(binaryData, mimeType);
+  // Step 6: Derive walk frames programmatically
+  // For front/back: derive walk-1 and walk-3 from idle via pixel shifting
+  const frontWalk1 = deriveWalkFrame(frontProcessed, -1);
+  const frontWalk3 = deriveWalkFrame(frontProcessed, 1);
+  const backWalk1 = deriveWalkFrame(backProcessed, -1);
+  const backWalk3 = deriveWalkFrame(backProcessed, 1);
 
-  // Detect background color from edges, but prefer green since we ask for #00FF00
-  let bg = detectBackgroundColor(source);
-  // If detected color is even remotely greenish, use pure green
-  if (bg.g > bg.r && bg.g > bg.b) {
-    bg = { r: 0, g: 255, b: 0 };
-  }
+  // For side views: we have idle + step. Walk-3 is step with slight bob.
+  const rightWalk3 = deriveSideWalkFrame(rightStepProcessed);
+  const leftWalk3 = mirrorFrame(rightWalk3);
 
-  // Extract the 12 frames from the generated grid
-  const frames = extractGridFrames(source, 3, 4, bg);
+  // Step 7: Downsample all 12 frames to 32x32 and assemble
+  // Spritesheet layout (96x128):
+  //   Row 0 (down/front): walk-1, idle, walk-3
+  //   Row 1 (left):       step,   idle, walk-3
+  //   Row 2 (right):      step,   idle, walk-3
+  //   Row 3 (up/back):    walk-1, idle, walk-3
+  const frames: RawImage[] = [
+    frontWalk1, frontProcessed, frontWalk3,     // Row 0: down (facing viewer)
+    leftStepProcessed, leftProcessed, leftWalk3, // Row 1: left
+    rightStepProcessed, rightProcessed, rightWalk3, // Row 2: right
+    backWalk1, backProcessed, backWalk3,         // Row 3: up (facing away)
+  ];
 
-  // Build the final 96×128 spritesheet (3 cols × 4 rows of 32×32)
   const sheetData = new Uint8Array(96 * 128 * 4);
-
-  for (let row = 0; row < 4; row++) {
-    for (let col = 0; col < 3; col++) {
-      // Fix frames that contain duplicate sprites side-by-side
-      const frame = fixDuplicateFrame(frames[row * 3 + col], bg);
-      // Crop to content, resize to fit, and center in 32×32
-      const centered = cropAndCenterFrame(frame, 32, 32, bg);
-      // Remove background
-      const clean = removeBackground(centered, 32, 32, bg);
-      blitFrame(sheetData, 96, clean, col * 32, row * 32, 32, 32);
-    }
+  for (let i = 0; i < 12; i++) {
+    const row = Math.floor(i / 3);
+    const col = i % 3;
+    const frame32 = downsampleTo32(frames[i]);
+    blitFrame(sheetData, 96, frame32, col * 32, row * 32, 32, 32);
   }
 
+  console.log('Sprite: assembling 96x128 spritesheet');
   const pngBytes = encodePng({ width: 96, height: 128, data: sheetData, channels: 4, depth: 8 });
   const blob = new Blob([pngBytes], { type: 'image/png' });
   return await ctx.storage.store(blob);
 }
 
-/** Find runs of "gap" (mostly background) in a 1D density array */
-function findGaps(density: Float64Array, length: number, minGap: number): number[] {
-  // A column/row is a "gap" if density is below 5% of the max density
-  const maxDensity = Math.max(...density);
-  if (maxDensity === 0) return [];
-  const gapThreshold = maxDensity * 0.05;
-
-  const gaps: { start: number; end: number }[] = [];
-  let inGap = false;
-  let gapStart = 0;
-  for (let i = 0; i < length; i++) {
-    if (density[i] <= gapThreshold) {
-      if (!inGap) { inGap = true; gapStart = i; }
-    } else {
-      if (inGap) {
-        if (i - gapStart >= minGap) gaps.push({ start: gapStart, end: i });
-        inGap = false;
-      }
+/** Encode a processed frame as PNG with magenta filling transparent pixels (for model reference) */
+function encodeRefPng(frame: RawImage): string {
+  const { width, height, data } = frame;
+  const filled = new Uint8Array(data);
+  for (let i = 0; i < width * height * 4; i += 4) {
+    if (filled[i + 3] === 0) {
+      filled[i] = 255;     // R
+      filled[i + 1] = 0;   // G
+      filled[i + 2] = 255; // B
+      filled[i + 3] = 255; // A
     }
   }
-  if (inGap && length - gapStart >= minGap) gaps.push({ start: gapStart, end: length });
-
-  // Return midpoints of each gap as cell boundaries
-  return gaps.map((g) => Math.floor((g.start + g.end) / 2));
+  const png = encodePng({ width, height, data: filled, channels: 4, depth: 8 });
+  return uint8ArrayToBase64(new Uint8Array(png));
 }
 
-/** Extract frames from a generated grid image by detecting actual grid gaps */
-function extractGridFrames(source: RawImage, cols: number, rows: number, bg: BgColor): RawImage[] {
-  const { width, height, data } = source;
-  const threshold = 80;
+// ─── Per-frame post-processing ───
 
-  // Step 1: Find bounding box of all non-bg content (excludes green borders)
-  let bMinX = width, bMinY = height, bMaxX = 0, bMaxY = 0;
+/**
+ * Process a single generated frame:
+ * 1. Remove background via flood-fill from edges + magenta pixel cleanup
+ * 2. Crop to content bounding box
+ * 3. Normalize height to ~96px (never upscale)
+ * 4. Place on 128x128 canvas with feet baseline at y=116, centered at x=64
+ * 5. Threshold alpha for crisp edges
+ */
+function processFrame(raw: RawImage): RawImage {
+  const { width, height, data } = raw;
+  const result = new Uint8Array(data);
+
+  // Background removal strategy:
+  // 1. Flood-fill with pure magenta (what we asked for in the prompt)
+  // 2. Flood-fill with detected corner color (what the model actually used)
+  // 3. Cleanup pass for common bg colors that slip through
+
+  const cornerBg = detectCornerColor(raw);
+  console.log(`  processFrame: corner bg=(${cornerBg.r},${cornerBg.g},${cornerBg.b}) on ${width}x${height}`);
+
+  // Pass 1: flood-fill with pure magenta (threshold=60 to catch impure magenta)
+  floodFillFromEdges(result, width, height, { r: 255, g: 0, b: 255 }, 80);
+  // Pass 2: flood-fill with detected corner color (handles non-magenta bg)
+  floodFillFromEdges(result, width, height, cornerBg, 60);
+
+  // Pass 3: cleanup any remaining background-ish pixels
+  for (let i = 0; i < width * height * 4; i += 4) {
+    if (result[i + 3] === 0) continue;
+    const r = result[i], g = result[i + 1], b = result[i + 2];
+    // Magenta-ish: R and B both high, G low
+    if (r > 150 && g < 100 && b > 150) { result[i + 3] = 0; continue; }
+    // Near-white / light grey
+    if (r > 220 && g > 220 && b > 220) { result[i + 3] = 0; continue; }
+    // Bright green
+    if (g > 180 && r < 100 && b < 100) { result[i + 3] = 0; continue; }
+  }
+
+  // Find content bounding box
+  let minX = width, maxX = 0, minY = height, maxY = 0;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
-      const dist = colorDistance(data[idx], data[idx + 1], data[idx + 2], bg.r, bg.g, bg.b);
-      if (dist >= threshold) {
-        if (x < bMinX) bMinX = x;
-        if (x > bMaxX) bMaxX = x;
-        if (y < bMinY) bMinY = y;
-        if (y > bMaxY) bMaxY = y;
+      if (result[(y * width + x) * 4 + 3] > 0) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
       }
     }
   }
 
-  if (bMaxX <= bMinX || bMaxY <= bMinY) {
-    console.log('No content found, falling back to even division');
-    return evenlyDivideGrid(source, cols, rows);
+  if (maxX <= minX || maxY <= minY) {
+    // No content — return empty 128x128
+    return { width: 128, height: 128, data: new Uint8Array(128 * 128 * 4) };
   }
 
-  const contentW = bMaxX - bMinX + 1;
-  const contentH = bMaxY - bMinY + 1;
+  const cropW = maxX - minX + 1;
+  const cropH = maxY - minY + 1;
 
-  // Step 2: Count non-bg pixels per column/row WITHIN the content bounding box
-  const colDensity = new Float64Array(contentW);
-  const rowDensity = new Float64Array(contentH);
-  for (let y = 0; y < contentH; y++) {
-    for (let x = 0; x < contentW; x++) {
-      const idx = ((bMinY + y) * width + (bMinX + x)) * 4;
-      const dist = colorDistance(data[idx], data[idx + 1], data[idx + 2], bg.r, bg.g, bg.b);
-      if (dist >= threshold) {
-        colDensity[x]++;
-        rowDensity[y]++;
-      }
+  // Normalize: scale so character height is ~96px (at 128x128 stage)
+  const targetCharH = 96;
+  const scale = Math.min(targetCharH / cropH, 1.0); // never upscale
+  const scaledW = Math.max(1, Math.round(cropW * scale));
+  const scaledH = Math.max(1, Math.round(cropH * scale));
+
+  // Place on 128x128 canvas with feet at baseline y=116, centered x=64
+  const canvasW = 128;
+  const canvasH = 128;
+  const canvas = new Uint8Array(canvasW * canvasH * 4);
+
+  const baselineY = 116;
+  const offsetX = Math.floor(64 - scaledW / 2);
+  const offsetY = baselineY - scaledH;
+
+  for (let y = 0; y < scaledH; y++) {
+    for (let x = 0; x < scaledW; x++) {
+      const srcX = minX + Math.floor((x / scaledW) * cropW);
+      const srcY = minY + Math.floor((y / scaledH) * cropH);
+      const srcIdx = (srcY * width + srcX) * 4;
+      const dstX = offsetX + x;
+      const dstY = offsetY + y;
+      if (dstX < 0 || dstX >= canvasW || dstY < 0 || dstY >= canvasH) continue;
+      const dstIdx = (dstY * canvasW + dstX) * 4;
+      canvas[dstIdx] = result[srcIdx];
+      canvas[dstIdx + 1] = result[srcIdx + 1];
+      canvas[dstIdx + 2] = result[srcIdx + 2];
+      // Threshold alpha: > 96 -> 255, else -> 0
+      canvas[dstIdx + 3] = result[srcIdx + 3] > 96 ? 255 : 0;
     }
   }
 
-  // Step 3: Find vertical and horizontal gaps within content area
-  const minGap = Math.max(2, Math.floor(Math.min(contentW, contentH) / 50));
-  const vGaps = findGaps(colDensity, contentW, minGap);
-  const hGaps = findGaps(rowDensity, contentH, minGap);
-
-  // Boundaries in content-relative coords, then offset to image coords
-  const colBounds = [bMinX, ...vGaps.map((g) => bMinX + g), bMaxX + 1];
-  const rowBounds = [bMinY, ...hGaps.map((g) => bMinY + g), bMaxY + 1];
-
-  const detectedCols = colBounds.length - 1;
-  const detectedRows = rowBounds.length - 1;
-  console.log(`Grid detection: ${detectedCols}×${detectedRows} (expected ${cols}×${rows}) in ${width}×${height} image, content box: ${contentW}×${contentH}`);
-
-  // Step 4: Extract detected cells
-  const extractCells = (cBounds: number[], rBounds: number[], nCols: number) => {
-    const cells: RawImage[] = [];
-    for (let r = 0; r < rBounds.length - 1; r++) {
-      for (let c = 0; c < cBounds.length - 1; c++) {
-        const x0 = cBounds[c], x1 = cBounds[c + 1];
-        const y0 = rBounds[r], y1 = rBounds[r + 1];
-        const cellW = x1 - x0, cellH = y1 - y0;
-        if (cellW < 4 || cellH < 4) continue;
-        const frameData = new Uint8Array(cellW * cellH * 4);
-        for (let y = 0; y < cellH; y++) {
-          for (let x = 0; x < cellW; x++) {
-            const srcIdx = ((y0 + y) * width + (x0 + x)) * 4;
-            const dstIdx = (y * cellW + x) * 4;
-            frameData[dstIdx] = data[srcIdx];
-            frameData[dstIdx + 1] = data[srcIdx + 1];
-            frameData[dstIdx + 2] = data[srcIdx + 2];
-            frameData[dstIdx + 3] = data[srcIdx + 3];
-          }
-        }
-        cells.push({ width: cellW, height: cellH, data: frameData });
-      }
-    }
-    return cells;
-  };
-
-  const allCells = extractCells(colBounds, rowBounds, detectedCols);
-  const needed = cols * rows; // 12
-
-  if (allCells.length === needed) {
-    return allCells;
-  }
-
-  if (allCells.length > needed) {
-    // Pick first `rows` rows × first `cols` cols from the detected grid
-    const frames: RawImage[] = [];
-    for (let r = 0; r < Math.min(rows, detectedRows); r++) {
-      for (let c = 0; c < Math.min(cols, detectedCols); c++) {
-        frames.push(allCells[r * detectedCols + c]);
-      }
-    }
-    while (frames.length < needed) {
-      frames.push(frames[frames.length - 1]);
-    }
-    return frames.slice(0, needed);
-  }
-
-  // Fewer cells than needed — evenly divide the content bounding box
-  console.log(`Only ${allCells.length} cells detected, falling back to even division of content box`);
-  const cellW = Math.floor(contentW / cols);
-  const cellH = Math.floor(contentH / rows);
-  const frames: RawImage[] = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const frameData = new Uint8Array(cellW * cellH * 4);
-      for (let y = 0; y < cellH; y++) {
-        for (let x = 0; x < cellW; x++) {
-          const srcIdx = ((bMinY + row * cellH + y) * width + (bMinX + col * cellW + x)) * 4;
-          const dstIdx = (y * cellW + x) * 4;
-          frameData[dstIdx] = data[srcIdx];
-          frameData[dstIdx + 1] = data[srcIdx + 1];
-          frameData[dstIdx + 2] = data[srcIdx + 2];
-          frameData[dstIdx + 3] = data[srcIdx + 3];
-        }
-      }
-      frames.push({ width: cellW, height: cellH, data: frameData });
-    }
-  }
-  return frames;
+  return { width: canvasW, height: canvasH, data: canvas };
 }
 
-function evenlyDivideGrid(source: RawImage, cols: number, rows: number): RawImage[] {
-  const cellW = Math.floor(source.width / cols);
-  const cellH = Math.floor(source.height / rows);
-  const frames: RawImage[] = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const frameData = new Uint8Array(cellW * cellH * 4);
-      for (let y = 0; y < cellH; y++) {
-        for (let x = 0; x < cellW; x++) {
-          const srcIdx = ((row * cellH + y) * source.width + (col * cellW + x)) * 4;
-          const dstIdx = (y * cellW + x) * 4;
-          frameData[dstIdx] = source.data[srcIdx];
-          frameData[dstIdx + 1] = source.data[srcIdx + 1];
-          frameData[dstIdx + 2] = source.data[srcIdx + 2];
-          frameData[dstIdx + 3] = source.data[srcIdx + 3];
-        }
-      }
-      frames.push({ width: cellW, height: cellH, data: frameData });
+// ─── Frame derivation helpers ───
+
+/** Mirror a frame horizontally (right -> left) */
+function mirrorFrame(frame: RawImage): RawImage {
+  const { width, height, data } = frame;
+  const mirrored = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const srcIdx = (y * width + x) * 4;
+      const dstIdx = (y * width + (width - 1 - x)) * 4;
+      mirrored[dstIdx] = data[srcIdx];
+      mirrored[dstIdx + 1] = data[srcIdx + 1];
+      mirrored[dstIdx + 2] = data[srcIdx + 2];
+      mirrored[dstIdx + 3] = data[srcIdx + 3];
     }
   }
-  return frames;
+  return { width, height, data: mirrored };
+}
+
+/**
+ * Derive a walk frame from an idle frame by shifting the lower body.
+ * direction: -1 for left-leg-forward, +1 for right-leg-forward
+ */
+function deriveWalkFrame(idle: RawImage, direction: number): RawImage {
+  const { width, height, data } = idle;
+  const result = new Uint8Array(data);
+
+  // Find content bounds
+  let minY = height, maxY = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3] > 0) {
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxY <= minY) return { width, height, data: result };
+
+  const contentH = maxY - minY + 1;
+  const legY = minY + Math.floor(contentH * 0.62);
+
+  // Shift lower body pixels by direction * 1px horizontally
+  for (let y = legY; y <= maxY; y++) {
+    const row = new Uint8Array(width * 4);
+    for (let x = 0; x < width; x++) {
+      const srcX = x - direction;
+      if (srcX >= 0 && srcX < width) {
+        const srcIdx = (y * width + srcX) * 4;
+        const dstIdx = x * 4;
+        row[dstIdx] = data[srcIdx];
+        row[dstIdx + 1] = data[srcIdx + 1];
+        row[dstIdx + 2] = data[srcIdx + 2];
+        row[dstIdx + 3] = data[srcIdx + 3];
+      }
+    }
+    // Write row back
+    for (let x = 0; x < width; x++) {
+      const dstIdx = (y * width + x) * 4;
+      result[dstIdx] = row[x * 4];
+      result[dstIdx + 1] = row[x * 4 + 1];
+      result[dstIdx + 2] = row[x * 4 + 2];
+      result[dstIdx + 3] = row[x * 4 + 3];
+    }
+  }
+
+  return { width, height, data: result };
+}
+
+/** Derive a side walk frame from a step frame by bobbing 1px */
+function deriveSideWalkFrame(step: RawImage): RawImage {
+  const { width, height, data } = step;
+  const result = new Uint8Array(width * height * 4);
+
+  // Bob whole sprite up by 1px
+  for (let y = 1; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const srcIdx = (y * width + x) * 4;
+      const dstIdx = ((y - 1) * width + x) * 4;
+      result[dstIdx] = data[srcIdx];
+      result[dstIdx + 1] = data[srcIdx + 1];
+      result[dstIdx + 2] = data[srcIdx + 2];
+      result[dstIdx + 3] = data[srcIdx + 3];
+    }
+  }
+
+  return { width, height, data: result };
+}
+
+/** Downsample a 128x128 frame to 32x32 using 4x4 block averaging */
+function downsampleTo32(frame: RawImage): Uint8Array {
+  const { width, height, data } = frame;
+  const result = new Uint8Array(32 * 32 * 4);
+  const scaleX = width / 32;
+  const scaleY = height / 32;
+
+  for (let dy = 0; dy < 32; dy++) {
+    for (let dx = 0; dx < 32; dx++) {
+      let r = 0, g = 0, b = 0, a = 0, count = 0;
+      const sy0 = Math.floor(dy * scaleY);
+      const sy1 = Math.floor((dy + 1) * scaleY);
+      const sx0 = Math.floor(dx * scaleX);
+      const sx1 = Math.floor((dx + 1) * scaleX);
+
+      for (let sy = sy0; sy < sy1; sy++) {
+        for (let sx = sx0; sx < sx1; sx++) {
+          if (sx < width && sy < height) {
+            const idx = (sy * width + sx) * 4;
+            r += data[idx];
+            g += data[idx + 1];
+            b += data[idx + 2];
+            a += data[idx + 3];
+            count++;
+          }
+        }
+      }
+
+      const dstIdx = (dy * 32 + dx) * 4;
+      if (count > 0) {
+        result[dstIdx] = Math.round(r / count);
+        result[dstIdx + 1] = Math.round(g / count);
+        result[dstIdx + 2] = Math.round(b / count);
+        // Threshold alpha: if average alpha > 128, fully opaque
+        result[dstIdx + 3] = (a / count) > 128 ? 255 : 0;
+      }
+    }
+  }
+
+  return result;
 }
 
 // ─── Image processing helpers ───
@@ -489,23 +776,28 @@ function colorDistance(r1: number, g1: number, b1: number, r2: number, g2: numbe
   return Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2);
 }
 
-function detectBackgroundColor(source: RawImage): BgColor {
+/** Detect bg color from the 4 corner regions (less likely to contain character than edges) */
+function detectCornerColor(source: RawImage): BgColor {
   const { width, height, data } = source;
+  // Sample a 5% patch from each corner
+  const patchW = Math.max(2, Math.floor(width * 0.05));
+  const patchH = Math.max(2, Math.floor(height * 0.05));
   let totalR = 0, totalG = 0, totalB = 0, count = 0;
 
-  const step = Math.max(1, Math.floor(Math.min(width, height) / 20));
-  for (let x = 0; x < width; x += step) {
-    for (const y of [0, height - 1]) {
-      const idx = (y * width + x) * 4;
-      totalR += data[idx]; totalG += data[idx + 1]; totalB += data[idx + 2];
-      count++;
-    }
-  }
-  for (let y = 0; y < height; y += step) {
-    for (const x of [0, width - 1]) {
-      const idx = (y * width + x) * 4;
-      totalR += data[idx]; totalG += data[idx + 1]; totalB += data[idx + 2];
-      count++;
+  const corners = [
+    [0, 0],                              // top-left
+    [width - patchW, 0],                  // top-right
+    [0, height - patchH],                 // bottom-left
+    [width - patchW, height - patchH],    // bottom-right
+  ];
+
+  for (const [cx, cy] of corners) {
+    for (let dy = 0; dy < patchH; dy++) {
+      for (let dx = 0; dx < patchW; dx++) {
+        const idx = ((cy + dy) * width + (cx + dx)) * 4;
+        totalR += data[idx]; totalG += data[idx + 1]; totalB += data[idx + 2];
+        count++;
+      }
     }
   }
 
@@ -516,177 +808,41 @@ function detectBackgroundColor(source: RawImage): BgColor {
   };
 }
 
-/**
- * Fix frames that contain duplicate sprites or are too wide.
- * Crops wide frames to a square region centered on the content.
- */
-function fixDuplicateFrame(frame: RawImage, bg: BgColor): RawImage {
-  const { width, height, data } = frame;
+/** Flood-fill from all edge pixels, making bg-matching pixels transparent */
+function floodFillFromEdges(
+  data: Uint8Array, width: number, height: number, bg: BgColor, threshold: number,
+): void {
+  const visited = new Uint8Array(width * height);
+  const queue: number[] = [];
 
-  // If frame is roughly square already, no fix needed
-  if (width <= height * 1.2) return frame;
-
-  const threshold = 80;
-
-  // Find content bounding box
-  let minX = width, maxX = 0, minY = height, maxY = 0;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
-      if (colorDistance(data[idx], data[idx + 1], data[idx + 2], bg.r, bg.g, bg.b) >= threshold) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
+  // Seed from all edge pixels
+  for (let x = 0; x < width; x++) {
+    queue.push(x);
+    queue.push((height - 1) * width + x);
+  }
+  for (let y = 1; y < height - 1; y++) {
+    queue.push(y * width);
+    queue.push(y * width + width - 1);
   }
 
-  if (maxX <= minX || maxY <= minY) return frame;
+  while (queue.length > 0) {
+    const pos = queue.pop()!;
+    if (pos < 0 || pos >= width * height) continue;
+    if (visited[pos]) continue;
+    const idx = pos * 4;
+    if (data[idx + 3] === 0) { visited[pos] = 1; continue; } // already transparent
+    const dist = colorDistance(data[idx], data[idx + 1], data[idx + 2], bg.r, bg.g, bg.b);
+    if (dist >= threshold) continue;
+    visited[pos] = 1;
+    data[idx + 3] = 0;
 
-  const contentW = maxX - minX + 1;
-  const contentH = maxY - minY + 1;
-
-  // If content is wider than 1.4x its height, it likely has duplicates
-  // Crop to a square region (height x height) centered on the densest column
-  if (contentW > contentH * 1.4) {
-    // Find the column with the most content pixels
-    const colDensity = new Float64Array(width);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = (y * width + x) * 4;
-        if (colorDistance(data[idx], data[idx + 1], data[idx + 2], bg.r, bg.g, bg.b) >= threshold) {
-          colDensity[x]++;
-        }
-      }
-    }
-
-    // Find densest region of width=height (square crop)
-    const cropW = Math.min(height, width);
-    let bestStart = 0, bestSum = 0;
-    let runSum = 0;
-    for (let x = 0; x < cropW && x < width; x++) runSum += colDensity[x];
-    bestSum = runSum;
-    for (let x = 1; x <= width - cropW; x++) {
-      runSum -= colDensity[x - 1];
-      runSum += colDensity[x + cropW - 1];
-      if (runSum > bestSum) {
-        bestSum = runSum;
-        bestStart = x;
-      }
-    }
-
-    const cropData = new Uint8Array(cropW * height * 4);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < cropW; x++) {
-        const srcIdx = (y * width + (bestStart + x)) * 4;
-        const dstIdx = (y * cropW + x) * 4;
-        cropData[dstIdx] = data[srcIdx];
-        cropData[dstIdx + 1] = data[srcIdx + 1];
-        cropData[dstIdx + 2] = data[srcIdx + 2];
-        cropData[dstIdx + 3] = data[srcIdx + 3];
-      }
-    }
-    console.log(`Fixed wide frame: ${width}x${height} -> ${cropW}x${height} (content was ${contentW}x${contentH})`);
-    return { width: cropW, height, data: cropData };
+    const x = pos % width;
+    const y = Math.floor(pos / width);
+    if (x > 0) queue.push(pos - 1);
+    if (x < width - 1) queue.push(pos + 1);
+    if (y > 0) queue.push(pos - width);
+    if (y < height - 1) queue.push(pos + width);
   }
-
-  return frame;
-}
-
-/**
- * Crop a frame to its content bounding box, resize to fit within targetW×targetH
- * while maintaining aspect ratio, and center in the target.
- * This prevents head-clipping when the character isn't centered in its grid cell.
- */
-function cropAndCenterFrame(frame: RawImage, targetW: number, targetH: number, bg: BgColor): Uint8Array {
-  const { width, height, data } = frame;
-  const threshold = 80;
-
-  // Find content bounding box
-  let minX = width, maxX = 0, minY = height, maxY = 0;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
-      if (colorDistance(data[idx], data[idx + 1], data[idx + 2], bg.r, bg.g, bg.b) >= threshold) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-
-  // No content found — just resize the whole frame
-  if (maxX <= minX || maxY <= minY) {
-    return resizeNearestNeighbor(frame, targetW, targetH);
-  }
-
-  // Crop to content
-  const cropW = maxX - minX + 1;
-  const cropH = maxY - minY + 1;
-
-  // Calculate scale to fit content into target while preserving aspect ratio
-  const scale = Math.min(targetW / cropW, targetH / cropH);
-  const scaledW = Math.max(1, Math.round(cropW * scale));
-  const scaledH = Math.max(1, Math.round(cropH * scale));
-
-  // Center offset in target
-  const offsetX = Math.floor((targetW - scaledW) / 2);
-  const offsetY = Math.floor((targetH - scaledH) / 2);
-
-  // Create target filled with transparent pixels
-  const result = new Uint8Array(targetW * targetH * 4);
-
-  // Nearest-neighbor resize from cropped content directly into centered position
-  for (let y = 0; y < scaledH; y++) {
-    for (let x = 0; x < scaledW; x++) {
-      const srcX = minX + Math.floor((x / scaledW) * cropW);
-      const srcY = minY + Math.floor((y / scaledH) * cropH);
-      const srcIdx = (srcY * width + srcX) * 4;
-      const dstIdx = ((offsetY + y) * targetW + (offsetX + x)) * 4;
-      result[dstIdx] = data[srcIdx];
-      result[dstIdx + 1] = data[srcIdx + 1];
-      result[dstIdx + 2] = data[srcIdx + 2];
-      result[dstIdx + 3] = data[srcIdx + 3];
-    }
-  }
-
-  return result;
-}
-
-function resizeNearestNeighbor(source: RawImage, targetW: number, targetH: number): Uint8Array {
-  const result = new Uint8Array(targetW * targetH * 4);
-  for (let y = 0; y < targetH; y++) {
-    for (let x = 0; x < targetW; x++) {
-      const srcX = Math.floor((x / targetW) * source.width);
-      const srcY = Math.floor((y / targetH) * source.height);
-      const srcIdx = (srcY * source.width + srcX) * 4;
-      const dstIdx = (y * targetW + x) * 4;
-      result[dstIdx] = source.data[srcIdx];
-      result[dstIdx + 1] = source.data[srcIdx + 1];
-      result[dstIdx + 2] = source.data[srcIdx + 2];
-      result[dstIdx + 3] = source.data[srcIdx + 3];
-    }
-  }
-  return result;
-}
-
-function removeBackground(pixels: Uint8Array, w: number, h: number, bg: BgColor): Uint8Array {
-  const result = new Uint8Array(pixels);
-  const threshold = 80;
-  for (let i = 0; i < w * h * 4; i += 4) {
-    if (result[i + 3] < 128) { result[i + 3] = 0; continue; }
-    const r = result[i], g = result[i + 1], b = result[i + 2];
-    // Standard background distance check
-    const dist = colorDistance(r, g, b, bg.r, bg.g, bg.b);
-    if (dist < threshold) { result[i + 3] = 0; continue; }
-    // Aggressive green removal: any pixel where green dominates
-    if (g > 120 && g > r * 1.3 && g > b * 1.3) { result[i + 3] = 0; continue; }
-    // Bright green catch-all
-    if (g > 180 && r < 120 && b < 120) { result[i + 3] = 0; continue; }
-  }
-  return result;
 }
 
 function blitFrame(dest: Uint8Array, destWidth: number, srcPixels: Uint8Array, destX: number, destY: number, w: number, h: number) {
@@ -701,4 +857,3 @@ function blitFrame(dest: Uint8Array, destWidth: number, srcPixels: Uint8Array, d
     }
   }
 }
-

@@ -2,7 +2,7 @@
 
 ## What is this
 
-Fork of [a]i-town](https://github.com/a16z-infra/ai-town) turned into **БЛЯДСКИЙ ЦИРК** — a circus-themed virtual world where AI agents live, talk, and cause chaos. All UI is in Russian.
+Fork of [ai-town](https://github.com/a16z-infra/ai-town) turned into **БЛЯДСКИЙ ЦИРК** — a circus-themed virtual world where AI agents live, talk, and cause chaos. All UI is in Russian.
 
 **Vibe**: crazy festival circus sexy rave. Think burning man meets cyberpunk circus — neon, smoke, strobes, chaos.
 
@@ -67,16 +67,15 @@ npx convex dev       # Convex watcher only (if running frontend separately)
 - **Format**: 96x128 PNG, 3 columns x 4 rows of 32x32 frames
 - **Rows**: down / left / right / up (facing directions)
 - **Columns**: 3 walking animation frames per direction
-- **Generation**: Gemini Pro generates pixel art on green (#00FF00) background
-- **Processing pipeline**:
-  1. Detect background color from image edges (override to pure green if greenish)
-  2. Find content bounding box (exclude green borders)
-  3. Gap-based grid detection: count pixel density per column/row, find gaps
-  4. Extract cells from detected grid boundaries, fix duplicate frames if too wide
-  5. Resize each cell to 32x32 via nearest-neighbor
-  6. Remove green background via color-distance threshold + aggressive green-specific removal
-  7. Assemble into 96x128 spritesheet
-- `src/components/Player.tsx` — `generatedSpritesheetData` defines the PixiJS spritesheet layout for dynamic sprites; uses `playerDesc.spriteSheetUrl`
+- **Full pipeline docs**: `docs/sprite-pipeline.md`
+- **Generation**: Per-frame approach (4 API calls, not single grid):
+  1. Front idle (text-only, magenta #FF00FF bg, 128x128)
+  2. Back idle + right idle (image-in with front as reference, parallel)
+  3. Right step (image-in with right idle as reference)
+  4. Left = mirror right, walk frames = programmatic pixel shifts
+  5. Post-process: dual flood-fill bg removal (magenta + corner-detected color), crop, normalize to 96px height, baseline at y=116
+  6. Downsample 128x128 → 32x32 via block averaging, assemble 96x128 sheet
+- `src/components/Player.tsx` — `generatedSpritesheetData` defines the PixiJS spritesheet layout; uses `playerDesc.spriteSheetUrl`
 - `convex/aiTown/playerDescription.ts` — Has `spriteSheetUrl` and `portraitUrl` optional fields
 
 ### World & Persistence
@@ -96,13 +95,13 @@ npx convex dev       # Convex watcher only (if running frontend separately)
 - `src/components/Game.tsx` — Game view: PixiJS stage + right sidebar
 - `src/components/PixiGame.tsx` — PixiJS viewport, click-to-move, camera
 - `src/components/Player.tsx` — Sprite rendering, animation, speech bubbles
-- `src/components/AgentCreator.tsx` — Agent manager: create agents (all use generated sprites) and remove existing ones
+- `src/components/AgentCreator.tsx` — Agent manager: list and remove existing agents
 - `src/components/PlayerDetails.tsx` — Selected player info panel
 
 ## Common Tasks
 
 ### Add a new agent via UI
-Click "Артисты" button to open the agent manager. Fill in name, identity, and plan. The agent gets an AI-generated portrait and spritesheet. Takes ~60 seconds.
+Click the "+" button (AddAgentButton) and enter a short description. The LLM generates a full character card, then Gemini creates a portrait and per-frame spritesheet. Takes ~60-90 seconds. "Артисты" button shows the agent list with remove controls.
 
 ### Add a hardcoded agent
 Edit `data/characters.ts`, add entry to `Descriptions` array. Run `npx convex run init` to seed.
@@ -134,5 +133,6 @@ npx convex run testing:randomPositions # Scatter all players
 - **Player spawn**: New players/agents spawn within 10 tiles of a random existing player. Falls back to random map position if no space found.
 - **Convex generated files**: `convex/_generated/` is auto-generated. Don't edit manually but DO commit changes.
 - **Image model**: `google/gemini-3-pro-image-preview` via OpenRouter for spritesheet/portrait generation. Needs `modalities: ['image', 'text']` in request.
-- **Grid detection**: AI sometimes generates grids with wrong dimensions (4x5 instead of 3x4). Gap-based detection handles this by finding actual cell boundaries and picking first 3x4 subset.
+- **Sprite generation**: Uses per-frame approach (4 API calls) instead of single-grid. Each frame generated individually with magenta bg, then assembled. See `docs/sprite-pipeline.md`.
+- **Sprite regeneration**: Run `npx convex run testing:regenerateSprites` then restart the world to apply new sprites.
 - **savedAgents table**: Agents persist across world restarts (including `spriteSheetUrl` and `portraitUrl`). `init.ts` restores from `savedAgents` if any exist, otherwise generates default agents from `data/characters.ts`.

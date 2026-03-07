@@ -2,7 +2,7 @@ import Game from './components/Game.tsx';
 
 import { ToastContainer } from 'react-toastify';
 import MusicButton from './components/buttons/MusicButton.tsx';
-import InteractButton from './components/buttons/InteractButton.tsx';
+
 import AgentCreator from './components/AgentCreator.tsx';
 import AddAgentButton from './components/buttons/AddAgentButton.tsx';
 
@@ -24,7 +24,6 @@ export default function Home() {
         <footer className="justify-end bottom-0 left-0 w-full flex items-center mt-4 gap-3 p-6 flex-wrap pointer-events-none">
           <div className="flex gap-4 flex-grow pointer-events-none">
             <MusicButton />
-            <InteractButton />
             <AgentCreator />
             <AddAgentButton />
           </div>
