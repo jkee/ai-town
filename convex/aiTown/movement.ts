@@ -1,5 +1,5 @@
 import { movementSpeed } from '../../data/characters';
-import { COLLISION_THRESHOLD } from '../constants';
+import { COLLISION_THRESHOLD, DRUG_SPEED_MODIFIER, DrugType } from '../constants';
 import { compressPath, distance, manhattanDistance, pointsEqual } from '../util/geometry';
 import { MinHeap } from '../util/minheap';
 import { Point, Vector } from '../util/types';
@@ -54,7 +54,8 @@ export function movePlayer(
   return;
 }
 
-export function findRoute(game: Game, now: number, player: Player, destination: Point) {
+export function findRoute(game: Game, now: number, player: Player, destination: Point, speedMultiplier?: number) {
+  const effectiveSpeed = movementSpeed * (speedMultiplier ?? 1);
   const minDistances: PathCandidate[][] = [];
   const explore = (current: PathCandidate): Array<PathCandidate> => {
     const { x, y } = current.position;
@@ -98,7 +99,7 @@ export function findRoute(game: Game, now: number, player: Player, destination: 
         position,
         facing,
         // Movement speed is in tiles per second.
-        t: current.t + (segmentLength / movementSpeed) * 1000,
+        t: current.t + (segmentLength / effectiveSpeed) * 1000,
         length,
         cost: length + remaining,
         prev: current,

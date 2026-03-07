@@ -6,7 +6,7 @@ import * as memory from './memory';
 import { api, internal } from '../_generated/api';
 import * as embeddingsCache from './embeddingsCache';
 import { GameId, conversationId, playerId } from '../aiTown/ids';
-import { NUM_MEMORIES_TO_SEARCH } from '../constants';
+import { NUM_MEMORIES_TO_SEARCH, DRUG_CONVERSATION_PROMPTS, DrugType } from '../constants';
 
 const selfInternal = internal.agent.conversation;
 
@@ -17,7 +17,7 @@ export async function startConversationMessage(
   playerId: GameId<'players'>,
   otherPlayerId: GameId<'players'>,
 ): Promise<string> {
-  const { player, otherPlayer, agent, otherAgent, lastConversation } = await ctx.runQuery(
+  const { player, otherPlayer, agent, otherAgent, lastConversation, drugState, otherDrugState } = await ctx.runQuery(
     selfInternal.queryPromptData,
     {
       worldId,
@@ -44,7 +44,7 @@ export async function startConversationMessage(
   const prompt = [
     `You are ${player.name}, and you just started a conversation with ${otherPlayer.name}.`,
   ];
-  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null));
+  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null, drugState, otherDrugState));
   prompt.push(...previousConversationPrompt(otherPlayer, lastConversation));
   prompt.push(...relatedMemoriesPrompt(memories));
   if (memoryWithOtherPlayer) {
@@ -82,7 +82,7 @@ export async function continueConversationMessage(
   playerId: GameId<'players'>,
   otherPlayerId: GameId<'players'>,
 ): Promise<string> {
-  const { player, otherPlayer, conversation, agent, otherAgent } = await ctx.runQuery(
+  const { player, otherPlayer, conversation, agent, otherAgent, drugState, otherDrugState } = await ctx.runQuery(
     selfInternal.queryPromptData,
     {
       worldId,
@@ -102,7 +102,7 @@ export async function continueConversationMessage(
     `You are ${player.name}, and you're currently in a conversation with ${otherPlayer.name}.`,
     `The conversation started at ${started.toLocaleString()}. It's now ${now.toLocaleString()}.`,
   ];
-  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null));
+  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null, drugState, otherDrugState));
   prompt.push(...relatedMemoriesPrompt(memories));
   prompt.push(
     `Below is the current chat history between you and ${otherPlayer.name}.`,
@@ -140,7 +140,7 @@ export async function leaveConversationMessage(
   playerId: GameId<'players'>,
   otherPlayerId: GameId<'players'>,
 ): Promise<string> {
-  const { player, otherPlayer, conversation, agent, otherAgent } = await ctx.runQuery(
+  const { player, otherPlayer, conversation, agent, otherAgent, drugState, otherDrugState } = await ctx.runQuery(
     selfInternal.queryPromptData,
     {
       worldId,
@@ -153,7 +153,7 @@ export async function leaveConversationMessage(
     `You are ${player.name}, and you're currently in a conversation with ${otherPlayer.name}.`,
     `You've decided to leave the question and would like to politely tell them you're leaving the conversation.`,
   ];
-  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null));
+  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null, drugState, otherDrugState));
   prompt.push(
     `Below is the current chat history between you and ${otherPlayer.name}.`,
     `How would you like to tell them that you're leaving? Your response should be brief and within 200 characters.`,
@@ -186,14 +186,22 @@ function agentPrompts(
   otherPlayer: { name: string },
   agent: { identity: string; plan: string } | null,
   otherAgent: { identity: string; plan: string } | null,
+  drugState?: { type: string; until: number } | null,
+  otherDrugState?: { type: string; until: number } | null,
 ): string[] {
   const prompt = [];
   if (agent) {
     prompt.push(`About you: ${agent.identity}`);
     prompt.push(`Your goals for the conversation: ${agent.plan}`);
   }
+  if (drugState) {
+    prompt.push(DRUG_CONVERSATION_PROMPTS[drugState.type as DrugType]);
+  }
   if (otherAgent) {
     prompt.push(`About ${otherPlayer.name}: ${otherAgent.identity}`);
+  }
+  if (otherDrugState) {
+    prompt.push(`${otherPlayer.name} appears to be under the influence of ${otherDrugState.type === 'cocaine' ? 'cocaine' : otherDrugState.type === 'mdma' ? 'MDMA' : 'magic mushrooms'} and is acting accordingly.`);
   }
   return prompt;
 }
@@ -341,6 +349,8 @@ export const queryPromptData = internalQuery({
         ...otherAgent,
       },
       lastConversation,
+      drugState: player.drugState ?? null,
+      otherDrugState: otherPlayer.drugState ?? null,
     };
   },
 });

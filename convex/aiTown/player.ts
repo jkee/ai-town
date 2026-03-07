@@ -8,6 +8,8 @@ import {
   HUMAN_IDLE_TOO_LONG,
   MAX_HUMAN_PLAYERS,
   MAX_PATHFINDS_PER_STEP,
+  DRUG_SPEED_MODIFIER,
+  DrugType,
 } from '../constants';
 import { pointsEqual, pathPosition } from '../util/geometry';
 import { Game } from './game';
@@ -42,11 +44,18 @@ export const activity = v.object({
 });
 export type Activity = Infer<typeof activity>;
 
+export const drugState = v.object({
+  type: v.union(v.literal('cocaine'), v.literal('mdma'), v.literal('mushroom')),
+  until: v.number(),
+});
+export type DrugState = Infer<typeof drugState>;
+
 export const serializedPlayer = {
   id: playerId,
   human: v.optional(v.string()),
   pathfinding: v.optional(pathfinding),
   activity: v.optional(activity),
+  drugState: v.optional(drugState),
 
   // The last time they did something.
   lastInput: v.number(),
@@ -62,6 +71,7 @@ export class Player {
   human?: string;
   pathfinding?: Pathfinding;
   activity?: Activity;
+  drugState?: DrugState;
 
   lastInput: number;
 
@@ -70,11 +80,12 @@ export class Player {
   speed: number;
 
   constructor(serialized: SerializedPlayer) {
-    const { id, human, pathfinding, activity, lastInput, position, facing, speed } = serialized;
+    const { id, human, pathfinding, activity, drugState, lastInput, position, facing, speed } = serialized;
     this.id = parseGameId('players', id);
     this.human = human;
     this.pathfinding = pathfinding;
     this.activity = activity;
+    this.drugState = drugState;
     this.lastInput = lastInput;
     this.position = position;
     this.facing = facing;
@@ -84,6 +95,10 @@ export class Player {
   tick(game: Game, now: number) {
     if (this.human && this.lastInput < now - HUMAN_IDLE_TOO_LONG) {
       this.leave(game, now);
+    }
+    // Decay drug effects
+    if (this.drugState && now > this.drugState.until) {
+      delete this.drugState;
     }
   }
 
@@ -116,7 +131,8 @@ export class Player {
       if (game.numPathfinds === MAX_PATHFINDS_PER_STEP) {
         console.warn(`Reached max pathfinds for this step`);
       }
-      const route = findRoute(game, now, this, pathfinding.destination);
+      const speedMul = this.drugState ? DRUG_SPEED_MODIFIER[this.drugState.type as DrugType] : undefined;
+      const route = findRoute(game, now, this, pathfinding.destination, speedMul);
       if (route === null) {
         console.log(`Failed to route to ${JSON.stringify(pathfinding.destination)}`);
         stopPlayer(this);
@@ -276,12 +292,13 @@ export class Player {
   }
 
   serialize(): SerializedPlayer {
-    const { id, human, pathfinding, activity, lastInput, position, facing, speed } = this;
+    const { id, human, pathfinding, activity, drugState, lastInput, position, facing, speed } = this;
     return {
       id,
       human,
       pathfinding,
       activity,
+      drugState,
       lastInput,
       position,
       facing,

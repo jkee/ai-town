@@ -300,6 +300,38 @@ export const removeAgent = mutation({
   },
 });
 
+export const dropDrug = mutation({
+  args: {
+    worldId: v.id('worlds'),
+    drugType: v.union(v.literal('cocaine'), v.literal('mdma'), v.literal('mushroom')),
+  },
+  handler: async (ctx, args) => {
+    const world = await ctx.db.get(args.worldId);
+    if (!world) {
+      throw new ConvexError(`Invalid world ID: ${args.worldId}`);
+    }
+    // Find which agent will get drugged (mirrors input handler logic)
+    const soberAgents = world.agents.filter((a) => {
+      const player = world.players.find((p) => p.id === a.playerId);
+      return player && !player.drugState;
+    });
+    const candidates = soberAgents.length > 0 ? soberAgents : world.agents;
+    const picked = candidates[Math.floor(Math.random() * candidates.length)];
+    let agentName: string | undefined;
+    if (picked) {
+      const desc = await ctx.db
+        .query('playerDescriptions')
+        .withIndex('worldId', (q) => q.eq('worldId', args.worldId).eq('playerId', picked.playerId))
+        .first();
+      agentName = desc?.name;
+    }
+    await insertInput(ctx, args.worldId, 'dropDrug', {
+      drugType: args.drugType,
+    });
+    return { agentName };
+  },
+});
+
 export const generateAndCreateAgent = mutation({
   args: {
     worldId: v.id('worlds'),

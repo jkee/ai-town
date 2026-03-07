@@ -7,6 +7,7 @@ import { inputHandler } from './inputHandler';
 import { point } from '../util/types';
 import { AgentDescription } from './agentDescription';
 import { Agent } from './agent';
+import { DRUG_DURATION, DrugType } from '../constants';
 
 export const agentInputs = {
   finishRememberConversation: inputHandler({
@@ -133,6 +134,38 @@ export const agentInputs = {
       game.agentDescriptions.delete(agentId);
       game.descriptionsModified = true;
       return null;
+    },
+  }),
+  dropDrug: inputHandler({
+    args: {
+      drugType: v.union(v.literal('cocaine'), v.literal('mdma'), v.literal('mushroom')),
+    },
+    handler: (game, now, args) => {
+      // Find all agents that are NOT already on drugs
+      const availableAgents: { agentId: string; playerId: string }[] = [];
+      for (const [agentId, agent] of game.world.agents) {
+        const player = game.world.players.get(agent.playerId);
+        if (player && !player.drugState) {
+          availableAgents.push({ agentId, playerId: agent.playerId });
+        }
+      }
+      if (availableAgents.length === 0) {
+        // All agents already on drugs, pick a random one anyway
+        const allAgents = [...game.world.agents.entries()];
+        if (allAgents.length === 0) return null;
+        const [, agent] = allAgents[Math.floor(Math.random() * allAgents.length)];
+        const player = game.world.players.get(agent.playerId);
+        if (!player) return null;
+        const drugType = args.drugType as DrugType;
+        player.drugState = { type: drugType, until: now + DRUG_DURATION[drugType] };
+        return { playerId: agent.playerId };
+      }
+      const picked = availableAgents[Math.floor(Math.random() * availableAgents.length)];
+      const player = game.world.players.get(picked.playerId as any);
+      if (!player) return null;
+      const drugType = args.drugType as DrugType;
+      player.drugState = { type: drugType, until: now + DRUG_DURATION[drugType] };
+      return { playerId: picked.playerId };
     },
   }),
   createAgent: inputHandler({

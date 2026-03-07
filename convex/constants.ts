@@ -82,6 +82,57 @@ export const ACTIVITIES = [
   { description: 'обнимает столб', emoji: '💃', duration: 35_000 },
 ];
 
+// Drug system
+export type DrugType = 'cocaine' | 'mdma' | 'mushroom';
+
+export const DRUG_DURATION: Record<DrugType, number> = {
+  cocaine: 2 * 60_000,
+  mdma: 5 * 60_000,
+  mushroom: 4 * 60_000,
+};
+
+export const DRUG_SPEED_MODIFIER: Record<DrugType, number> = {
+  cocaine: 2.0,
+  mdma: 1.0,
+  mushroom: 0.5,
+};
+
+export const DRUG_ACTIVITIES: Record<DrugType, typeof ACTIVITIES> = {
+  cocaine: [
+    { description: 'бегает кругами как бешеный', emoji: '💊', duration: 20_000 },
+    { description: 'танцует с бешеной скоростью', emoji: '⚡', duration: 25_000 },
+    { description: 'рассказывает бизнес-план на миллиард', emoji: '💰', duration: 30_000 },
+    { description: 'чистит зубы жвачкой', emoji: '😬', duration: 15_000 },
+    { description: 'нюхает что-то с ключа', emoji: '🔑', duration: 10_000 },
+    { description: 'говорит без остановки', emoji: '🗣️', duration: 35_000 },
+    { description: 'дёргает головой под каждый бит', emoji: '💥', duration: 20_000 },
+  ],
+  mdma: [
+    { description: 'обнимает всех подряд', emoji: '🫂', duration: 40_000 },
+    { description: 'танцует с закрытыми глазами', emoji: '💗', duration: 60_000 },
+    { description: 'гладит траву руками', emoji: '🌿', duration: 45_000 },
+    { description: 'говорит всем "я тебя люблю"', emoji: '❤️', duration: 30_000 },
+    { description: 'качается в такт музыке', emoji: '🎶', duration: 50_000 },
+    { description: 'массирует себе челюсть', emoji: '😵', duration: 20_000 },
+    { description: 'светится от счастья', emoji: '✨', duration: 55_000 },
+  ],
+  mushroom: [
+    { description: 'лежит и смотрит на звёзды', emoji: '🌌', duration: 90_000 },
+    { description: 'разговаривает с деревом', emoji: '🌳', duration: 60_000 },
+    { description: 'смотрит на свои руки', emoji: '🖐️', duration: 45_000 },
+    { description: 'ржёт без причины', emoji: '🤣', duration: 40_000 },
+    { description: 'лежит в траве и ржёт', emoji: '🍄', duration: 70_000 },
+    { description: 'видит фракталы в облаках', emoji: '🌀', duration: 55_000 },
+    { description: 'медленно кружится на месте', emoji: '🔮', duration: 60_000 },
+  ],
+};
+
+export const DRUG_CONVERSATION_PROMPTS: Record<DrugType, string> = {
+  cocaine: `You are currently HIGH ON COCAINE. You talk extremely fast, interrupt constantly, jump between topics, think you're a genius. You're hyperactive, grandiose, and can't sit still. Use short choppy sentences. Be aggressive and confident. Sometimes mention how great you feel. Speak in a rushed, manic way.`,
+  mdma: `You are currently HIGH ON MDMA/ECSTASY. You feel overwhelming love and empathy for everyone. You want to hug people, tell them how beautiful they are, share deep emotional truths. Everything feels amazing - the music, the lights, the people. You're touchy-feely and deeply emotional. Use lots of affectionate language.`,
+  mushroom: `You are currently HIGH ON MAGIC MUSHROOMS. Reality is melting and shifting around you. You see patterns in everything, have deep philosophical insights that may or may not make sense. You speak slowly, get distracted by visuals, sometimes forget what you were saying. Mix profound observations with complete nonsense. You might talk to objects or see things that aren't there.`,
+};
+
 export const ENGINE_ACTION_DURATION = 30000;
 
 // Bound the number of pathfinding searches we do per game step.

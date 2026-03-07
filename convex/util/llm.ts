@@ -150,8 +150,8 @@ export async function chatCompletion(
   body.model = body.model ?? config.chatModel;
   const baseStopWords = body.stop ? (typeof body.stop === 'string' ? [body.stop] : [...body.stop]) : [];
   if (config.stopWords) baseStopWords.push(...config.stopWords);
-  // Gemini supports max 16 stop sequences
-  const stopWords = baseStopWords.slice(0, 16);
+  // Gemini supports max 5 stop sequences (reduced for safety)
+  const stopWords = baseStopWords.slice(0, 4);
   body.stop = stopWords;
   console.log(body);
   const {

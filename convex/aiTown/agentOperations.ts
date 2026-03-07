@@ -10,7 +10,7 @@ import {
 } from '../agent/conversation';
 import { assertNever } from '../util/assertNever';
 import { serializedAgent } from './agent';
-import { ACTIVITIES, ACTIVITY_COOLDOWN, CONVERSATION_COOLDOWN } from '../constants';
+import { ACTIVITIES, ACTIVITY_COOLDOWN, CONVERSATION_COOLDOWN, DRUG_ACTIVITIES, DrugType } from '../constants';
 import { api, internal } from '../_generated/api';
 import { sleep } from '../util/sleep';
 import { serializedPlayer } from './player';
@@ -103,6 +103,11 @@ export const agentDoSomething = internalAction({
     const { player, agent } = args;
     const map = new WorldMap(args.map);
     const now = Date.now();
+
+    // Check drug state
+    const isOnDrugs = player.drugState && now < player.drugState.until;
+    const drugType = isOnDrugs ? (player.drugState!.type as DrugType) : null;
+
     // Don't try to start a new conversation if we were just in one.
     const justLeftConversation =
       agent.lastConversation && now < agent.lastConversation + CONVERSATION_COOLDOWN;
@@ -110,6 +115,10 @@ export const agentDoSomething = internalAction({
     const recentlyAttemptedInvite =
       agent.lastInviteAttempt && now < agent.lastInviteAttempt + CONVERSATION_COOLDOWN;
     const recentActivity = player.activity && now < player.activity.until + ACTIVITY_COOLDOWN;
+
+    // Pick activity pool based on drug state
+    const activityPool = drugType ? DRUG_ACTIVITIES[drugType] : ACTIVITIES;
+
     // Decide whether to do an activity or wander somewhere.
     if (!player.pathfinding) {
       if (recentActivity || justLeftConversation) {
@@ -125,8 +134,7 @@ export const agentDoSomething = internalAction({
         });
         return;
       } else {
-        // TODO: have LLM choose the activity & emoji
-        const activity = ACTIVITIES[Math.floor(Math.random() * ACTIVITIES.length)];
+        const activity = activityPool[Math.floor(Math.random() * activityPool.length)];
         await sleep(Math.random() * 1000);
         await ctx.runMutation(api.aiTown.main.sendInput, {
           worldId: args.worldId,
@@ -139,20 +147,38 @@ export const agentDoSomething = internalAction({
               emoji: activity.emoji,
               until: Date.now() + activity.duration,
             },
+            // Drugged agents wander while doing their activity
+            ...(isOnDrugs ? { destination: wanderDestination(map) } : {}),
           },
         });
         return;
       }
     }
-    const invitee =
-      justLeftConversation || recentlyAttemptedInvite
-        ? undefined
-        : await ctx.runQuery(internal.aiTown.agent.findConversationCandidate, {
-            now,
-            worldId: args.worldId,
-            player: args.player,
-            otherFreePlayers: args.otherFreePlayers,
-          });
+
+    // Mushroom agents are too gone to invite anyone
+    // Cocaine agents ignore cooldowns and invite more aggressively
+    let invitee;
+    if (drugType === 'mushroom') {
+      invitee = undefined;
+    } else if (drugType === 'cocaine') {
+      // Cocaine: ignore invite cooldown, always try to talk
+      invitee = await ctx.runQuery(internal.aiTown.agent.findConversationCandidate, {
+        now,
+        worldId: args.worldId,
+        player: args.player,
+        otherFreePlayers: args.otherFreePlayers,
+      });
+    } else {
+      invitee =
+        justLeftConversation || recentlyAttemptedInvite
+          ? undefined
+          : await ctx.runQuery(internal.aiTown.agent.findConversationCandidate, {
+              now,
+              worldId: args.worldId,
+              player: args.player,
+              otherFreePlayers: args.otherFreePlayers,
+            });
+    }
 
     // TODO: We hit a lot of OCC errors on sending inputs in this file. It's
     // easy for them to get scheduled at the same time and line up in time.
