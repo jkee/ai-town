@@ -29,7 +29,7 @@ npx convex dev       # Convex watcher only (if running frontend separately)
 ### Stack
 - **Frontend**: React + PixiJS (pixi-viewport), Vite
 - **Backend**: Convex (serverless functions with local dev backend)
-- **AI**: OpenRouter API (Gemini Flash for chat, Gemini Pro for image generation)
+- **AI**: OpenRouter API (Gemini 2.5 Flash Lite for chat, Gemini Pro for image generation, OpenAI text-embedding-3-small for embeddings)
 - **Map**: Tile-based 48x32 grid, 32px tiles
 
 ### Convex Runtime Constraints
@@ -43,7 +43,8 @@ npx convex dev       # Convex watcher only (if running frontend separately)
 
 ### Key Env Variables
 - `OPENROUTER_API_KEY` — required for all AI features
-- `OPENROUTER_CHAT_MODEL` — chat model (default: `google/gemini-2.0-flash-001`)
+- `OPENROUTER_CHAT_MODEL` — chat model (default: `google/gemini-2.5-flash-lite`)
+- `OPENROUTER_EMBEDDING_MODEL` — embedding model (default: `openai/text-embedding-3-small`)
 
 ## File Structure
 

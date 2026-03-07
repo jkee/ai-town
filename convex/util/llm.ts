@@ -51,8 +51,8 @@ export function getLLMConfig(): LLMConfig {
     return {
       provider: 'openrouter',
       url: 'https://openrouter.ai/api',
-      chatModel: process.env.OPENROUTER_CHAT_MODEL ?? 'google/gemini-2.0-flash-001',
-      embeddingModel: process.env.OPENROUTER_EMBEDDING_MODEL ?? 'openai/text-embedding-ada-002',
+      chatModel: process.env.OPENROUTER_CHAT_MODEL ?? 'google/gemini-2.5-flash-lite',
+      embeddingModel: process.env.OPENROUTER_EMBEDDING_MODEL ?? 'openai/text-embedding-3-small',
       stopWords: [],
       apiKey: process.env.OPENROUTER_API_KEY,
     };
