@@ -1,10 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
+import { Id } from '../../../convex/_generated/dataModel';
 import { toast } from 'react-toastify';
 import ReactModal from 'react-modal';
 import Button from './Button';
 import starImg from '../../../assets/star.svg';
+
+/** Watch agent creation jobs and show toasts on completion/error */
+function useAgentCreationWatcher(worldId: Id<'worlds'> | undefined) {
+  const jobs = useQuery(api.world.agentCreationJobs, worldId ? { worldId } : 'skip');
+  const clearJob = useMutation(api.world.clearAgentCreationJob);
+  const handledRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!jobs) return;
+    for (const job of jobs) {
+      if (handledRef.current.has(job._id)) continue;
+      if (job.status === 'complete') {
+        handledRef.current.add(job._id);
+        toast.success(`${job.agentName || 'Артист'} вышел на арену!`);
+        clearJob({ jobId: job._id });
+      } else if (job.status === 'error') {
+        handledRef.current.add(job._id);
+        toast.error(`Не удалось создать артиста: ${job.error || 'неизвестная ошибка'}`);
+        clearJob({ jobId: job._id });
+      }
+    }
+  }, [jobs, clearJob]);
+}
 
 export default function AddAgentButton() {
   const [modalOpen, setModalOpen] = useState(false);
@@ -14,6 +38,8 @@ export default function AddAgentButton() {
   const worldStatus = useQuery(api.world.defaultWorldStatus);
   const worldId = worldStatus?.worldId;
   const generate = useMutation(api.world.generateAndCreateAgent);
+
+  useAgentCreationWatcher(worldId);
 
   const handleGenerate = async () => {
     if (!worldId || !prompt.trim()) {

@@ -75,6 +75,16 @@ export const aiTownTables = {
     spriteSheetUrl: v.optional(v.string()),
   }).index('worldId', ['worldId']),
 
+  // Tracks agent creation jobs so the frontend can show completion/error notifications.
+  agentCreationJobs: defineTable({
+    worldId: v.id('worlds'),
+    prompt: v.string(),
+    status: v.union(v.literal('pending'), v.literal('complete'), v.literal('error')),
+    agentName: v.optional(v.string()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index('worldId', ['worldId', 'status']),
+
   // The agent layer wants to know what the last (completed) conversation was between two players,
   // so this table represents a labelled graph indicating which players have talked to each other.
   participatedTogether: defineTable({

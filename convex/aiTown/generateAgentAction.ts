@@ -11,9 +11,11 @@ export const generateAgent = internalAction({
   args: {
     worldId: v.id('worlds'),
     prompt: v.string(),
+    jobId: v.id('agentCreationJobs'),
   },
   handler: async (ctx, args) => {
-    const systemPrompt = `Ты — генератор персонажей для БЛЯДСКОГО ЦИРКА. Это виртуальный цирк с безумными, развратными, пьяными и абсурдными персонажами.
+    try {
+      const systemPrompt = `Ты — генератор персонажей для БЛЯДСКОГО ЦИРКА. Это виртуальный цирк с безумными, развратными, пьяными и абсурдными персонажами.
 
 Пользователь даст тебе краткое описание персонажа. Ты должен сгенерировать полную карточку персонажа в формате JSON.
 
@@ -25,60 +27,76 @@ export const generateAgent = internalAction({
   "portraitPrompt": "Short English description of the character's appearance for image generation. Circus style, colorful, expressive. 1-2 sentences."
 }`;
 
-    const { content } = await chatCompletion({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: args.prompt },
-      ],
-      temperature: 0.9,
-      max_tokens: 500,
-    });
+      const { content } = await chatCompletion({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: args.prompt },
+        ],
+        temperature: 0.9,
+        max_tokens: 500,
+      });
 
-    let parsed;
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON found in response');
-      parsed = JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      throw new Error(`Failed to parse LLM response: ${content}`);
+      let parsed;
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('No JSON found in response');
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch (e) {
+        throw new Error(`Failed to parse LLM response: ${content}`);
+      }
+
+      const { name, identity, plan, portraitPrompt } = parsed;
+      if (!name || !identity || !plan) {
+        throw new Error(`Incomplete agent data: ${JSON.stringify(parsed)}`);
+      }
+
+      const portraitDesc = portraitPrompt || `A circus character named ${name}`;
+
+      // Generate portrait and spritesheet in parallel
+      const [portraitResult, spriteResult] = await Promise.allSettled([
+        generatePortrait(ctx, portraitDesc),
+        generateSpriteSheetPerFrame(ctx, portraitDesc),
+      ]);
+
+      const portraitStorageId = portraitResult.status === 'fulfilled' ? portraitResult.value : undefined;
+      if (portraitResult.status === 'rejected') {
+        console.error('Portrait generation failed:', portraitResult.reason);
+      }
+
+      // Spritesheet is required — no fallback to hardcoded sprites
+      if (spriteResult.status === 'rejected') {
+        console.error('Spritesheet generation failed:', spriteResult.reason);
+        throw new Error(`Spritesheet generation failed: ${spriteResult.reason}`);
+      }
+      const spriteSheetStorageId = spriteResult.value;
+
+      await ctx.runMutation(internal.aiTown.generateAgent.createGeneratedAgent, {
+        worldId: args.worldId,
+        name,
+        character: 'generated',
+        identity,
+        plan,
+        portraitStorageId,
+        spriteSheetStorageId,
+      });
+
+      // Mark job as complete
+      await ctx.runMutation(internal.aiTown.generateAgentAction.updateCreationJob, {
+        jobId: args.jobId,
+        status: 'complete',
+        agentName: name,
+      });
+
+      return { name, character: 'generated' };
+    } catch (e: any) {
+      // Mark job as error
+      await ctx.runMutation(internal.aiTown.generateAgentAction.updateCreationJob, {
+        jobId: args.jobId,
+        status: 'error',
+        error: e.message || 'Unknown error',
+      });
+      throw e;
     }
-
-    const { name, identity, plan, portraitPrompt } = parsed;
-    if (!name || !identity || !plan) {
-      throw new Error(`Incomplete agent data: ${JSON.stringify(parsed)}`);
-    }
-
-    const portraitDesc = portraitPrompt || `A circus character named ${name}`;
-
-    // Generate portrait and spritesheet in parallel
-    const [portraitResult, spriteResult] = await Promise.allSettled([
-      generatePortrait(ctx, portraitDesc),
-      generateSpriteSheetPerFrame(ctx, portraitDesc),
-    ]);
-
-    const portraitStorageId = portraitResult.status === 'fulfilled' ? portraitResult.value : undefined;
-    if (portraitResult.status === 'rejected') {
-      console.error('Portrait generation failed:', portraitResult.reason);
-    }
-
-    // Spritesheet is required — no fallback to hardcoded sprites
-    if (spriteResult.status === 'rejected') {
-      console.error('Spritesheet generation failed:', spriteResult.reason);
-      throw new Error(`Spritesheet generation failed: ${spriteResult.reason}`);
-    }
-    const spriteSheetStorageId = spriteResult.value;
-
-    await ctx.runMutation(internal.aiTown.generateAgent.createGeneratedAgent, {
-      worldId: args.worldId,
-      name,
-      character: 'generated',
-      identity,
-      plan,
-      portraitStorageId,
-      spriteSheetStorageId,
-    });
-
-    return { name, character: 'generated' };
   },
 });
 
@@ -145,6 +163,22 @@ export const regenerateSprite = internalAction({
       savedAgentId: args.savedAgentId,
       spriteSheetStorageId: spriteResult.value,
       portraitStorageId,
+    });
+  },
+});
+
+export const updateCreationJob = internalMutation({
+  args: {
+    jobId: v.id('agentCreationJobs'),
+    status: v.union(v.literal('complete'), v.literal('error')),
+    agentName: v.optional(v.string()),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: args.status,
+      agentName: args.agentName,
+      error: args.error,
     });
   },
 });
@@ -512,7 +546,8 @@ async function generateSpriteSheetPerFrame(ctx: any, description: string): Promi
   for (let i = 0; i < 12; i++) {
     const row = Math.floor(i / 3);
     const col = i % 3;
-    const frame32 = downsampleTo32(frames[i]);
+    const enhanced = applyOutlineAndShadow(frames[i]);
+    const frame32 = downsampleTo32(enhanced);
     blitFrame(sheetData, 96, frame32, col * 32, row * 32, 32, 32);
   }
 
@@ -720,6 +755,81 @@ function deriveSideWalkFrame(step: RawImage): RawImage {
   }
 
   return { width, height, data: result };
+}
+
+/** Add a dark outline around opaque pixels */
+function addOutline(frame: RawImage, thickness: number): RawImage {
+  const { width, height, data } = frame;
+  const result = new Uint8Array(data);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      if (data[idx + 3] > 0) continue; // skip opaque pixels
+
+      // Check if any opaque pixel exists within thickness (circular)
+      let nearOpaque = false;
+      for (let dy = -thickness; dy <= thickness && !nearOpaque; dy++) {
+        for (let dx = -thickness; dx <= thickness && !nearOpaque; dx++) {
+          if (dx * dx + dy * dy > thickness * thickness) continue;
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+          if (data[(ny * width + nx) * 4 + 3] > 0) nearOpaque = true;
+        }
+      }
+
+      if (nearOpaque) {
+        result[idx] = 15;
+        result[idx + 1] = 10;
+        result[idx + 2] = 25;
+        result[idx + 3] = 255;
+      }
+    }
+  }
+  return { width, height, data: result };
+}
+
+/** Add a dark drop shadow behind the character */
+function addDropShadow(frame: RawImage, offsetX: number, offsetY: number): RawImage {
+  const { width, height, data } = frame;
+  const result = new Uint8Array(width * height * 4);
+
+  // First pass: draw shadow (offset opaque pixels as dark semi-transparent)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3] === 0) continue;
+      const sx = x + offsetX, sy = y + offsetY;
+      if (sx < 0 || sx >= width || sy < 0 || sy >= height) continue;
+      const dstIdx = (sy * width + sx) * 4;
+      result[dstIdx] = 0;
+      result[dstIdx + 1] = 0;
+      result[dstIdx + 2] = 0;
+      result[dstIdx + 3] = 140;
+    }
+  }
+
+  // Second pass: draw character + outline on top (overwrite shadow where character exists)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      if (data[idx + 3] > 0) {
+        result[idx] = data[idx];
+        result[idx + 1] = data[idx + 1];
+        result[idx + 2] = data[idx + 2];
+        result[idx + 3] = data[idx + 3];
+      }
+    }
+  }
+
+  return { width, height, data: result };
+}
+
+/** Apply outline + shadow to a frame for better contrast against backgrounds */
+function applyOutlineAndShadow(frame: RawImage): RawImage {
+  // Outline first (3px at 128x128 ≈ ~1px after 4x downsample to 32x32)
+  const outlined = addOutline(frame, 3);
+  // Shadow: 4px down, 2px right at 128x128
+  return addDropShadow(outlined, 2, 4);
 }
 
 /** Downsample a 128x128 frame to 32x32 using 4x4 block averaging */

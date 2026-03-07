@@ -16,6 +16,7 @@ export default function MusicButton() {
   }, [musicUrl]);
 
   const flipSwitch = async () => {
+    if (!musicUrl) return;
     if (isPlaying) {
       sound.stop('background');
     } else {

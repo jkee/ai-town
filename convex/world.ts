@@ -310,9 +310,16 @@ export const generateAndCreateAgent = mutation({
     if (!world) {
       throw new ConvexError(`Invalid world ID: ${args.worldId}`);
     }
+    const jobId = await ctx.db.insert('agentCreationJobs', {
+      worldId: args.worldId,
+      prompt: args.prompt,
+      status: 'pending',
+      createdAt: Date.now(),
+    });
     await ctx.scheduler.runAfter(0, internal.aiTown.generateAgentAction.generateAgent, {
       worldId: args.worldId,
       prompt: args.prompt,
+      jobId,
     });
   },
 });
@@ -326,6 +333,27 @@ export const listSavedAgents = query({
       .query('savedAgents')
       .withIndex('worldId', (q) => q.eq('worldId', args.worldId))
       .collect();
+  },
+});
+
+export const agentCreationJobs = query({
+  args: {
+    worldId: v.id('worlds'),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('agentCreationJobs')
+      .withIndex('worldId', (q) => q.eq('worldId', args.worldId))
+      .collect();
+  },
+});
+
+export const clearAgentCreationJob = mutation({
+  args: {
+    jobId: v.id('agentCreationJobs'),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.jobId);
   },
 });
 
