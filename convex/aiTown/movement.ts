@@ -1,5 +1,5 @@
 import { movementSpeed } from '../../data/characters';
-import { COLLISION_THRESHOLD, DRUG_SPEED_MODIFIER, DrugType } from '../constants';
+import { COLLISION_THRESHOLD } from '../constants';
 import { compressPath, distance, manhattanDistance, pointsEqual } from '../util/geometry';
 import { MinHeap } from '../util/minheap';
 import { Point, Vector } from '../util/types';

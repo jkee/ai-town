@@ -12,6 +12,8 @@ export const Character = ({
   isMoving = false,
   isThinking = false,
   isSpeaking = false,
+  isDancing = false,
+  danceSpeed = 0.25,
   emoji = '',
   isViewer = false,
   speed = 0.1,
@@ -30,6 +32,10 @@ export const Character = ({
   isThinking?: boolean;
   // Shows a speech bubble if true.
   isSpeaking?: boolean;
+  // Dance animation.
+  isDancing?: boolean;
+  // Dance animation speed (cocaine = fast, mushroom = slow).
+  danceSpeed?: number;
   emoji?: string;
   // Highlights the player.
   isViewer?: boolean;
@@ -56,27 +62,50 @@ export const Character = ({
   const roundedOrientation = Math.floor(orientation / 90);
   const direction = ['right', 'down', 'left', 'up'][roundedOrientation];
 
+  // Dance animation: cycle through all directions rapidly
+  const [danceFrame, setDanceFrame] = useState(0);
+  const [danceBounce, setDanceBounce] = useState(0);
+  useEffect(() => {
+    if (!isDancing) return;
+    let frame = 0;
+    const ticker = PIXI.Ticker.shared;
+    // Scale frame increment by danceSpeed (0.25 = normal, 0.5 = fast cocaine, 0.12 = slow shroom)
+    const speedFactor = danceSpeed / 0.25;
+    const update = () => {
+      frame += speedFactor;
+      // Switch direction every ~8 frames
+      setDanceFrame(Math.floor(frame / 8) % 4);
+      // Bounce up and down
+      setDanceBounce(Math.abs(Math.sin(frame * 0.15)) * -6);
+    };
+    ticker.add(update);
+    return () => { ticker.remove(update); };
+  }, [isDancing, danceSpeed]);
+
+  const danceDirections = ['down', 'left', 'right', 'down'];
+  const activeDirection = isDancing ? danceDirections[danceFrame] : direction;
+
   // Prevents the animation from stopping when the texture changes
   // (see https://github.com/pixijs/pixi-react/issues/359)
   const ref = useRef<PIXI.AnimatedSprite | null>(null);
   useEffect(() => {
-    if (isMoving) {
+    if (isMoving || isDancing) {
       ref.current?.play();
     }
-  }, [direction, isMoving]);
+  }, [activeDirection, isMoving, isDancing]);
 
   if (!spriteSheet) return null;
 
   return (
-    <Container x={x} y={y} interactive={true} pointerdown={onClick} cursor="pointer">
+    <Container x={x} y={y + (isDancing ? danceBounce : 0)} interactive={true} pointerdown={onClick} cursor="pointer">
       {isThinking && <FloatingEmoji emoji="💭" offsetX={-20} />}
       {isSpeaking && <FloatingEmoji emoji="💬" offsetX={18} />}
       {isViewer && <ViewerIndicator />}
       <AnimatedSprite
         ref={ref}
-        isPlaying={isMoving}
-        textures={spriteSheet.animations[direction]}
-        animationSpeed={speed}
+        isPlaying={isMoving || isDancing}
+        textures={spriteSheet.animations[activeDirection]}
+        animationSpeed={isDancing ? danceSpeed : speed}
         anchor={{ x: 0.5, y: 0.5 }}
       />
       {emoji && <FloatingEmoji emoji={emoji} offsetX={0} offsetY={-28} pulse />}

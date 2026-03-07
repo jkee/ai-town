@@ -223,6 +223,19 @@ export default function PlayerDetails({
           </a>
         </>
       )}
+      {player.drugState && player.drugState.until > Date.now() && (
+        <div className="mt-4 p-2 rounded text-center text-sm sm:text-base" style={{
+          background: player.drugState.type === 'cocaine' ? 'rgba(255,68,68,0.2)' :
+                      player.drugState.type === 'mdma' ? 'rgba(255,105,180,0.2)' :
+                      'rgba(155,89,182,0.2)',
+          border: `1px solid ${player.drugState.type === 'cocaine' ? '#ff4444' :
+                                player.drugState.type === 'mdma' ? '#ff69b4' : '#9b59b6'}`,
+        }}>
+          {player.drugState.type === 'cocaine' && '💊 Под кокаином'}
+          {player.drugState.type === 'mdma' && '💗 Под МДМА'}
+          {player.drugState.type === 'mushroom' && '🍄 На грибах'}
+        </div>
+      )}
       {!playerConversation && player.activity && player.activity.until > Date.now() && (
         <div className="box flex-grow mt-6">
           <h2 className="bg-brown-700 text-base sm:text-lg text-center">

@@ -41,6 +41,7 @@ export const activity = v.object({
   description: v.string(),
   emoji: v.optional(v.string()),
   until: v.number(),
+  dance: v.optional(v.boolean()),
 });
 export type Activity = Infer<typeof activity>;
 

@@ -89,15 +89,34 @@ npx convex dev       # Convex watcher only (if running frontend separately)
 ### LLM Integration
 - `convex/util/llm.ts` — `chatCompletion()`, `getLLMConfig()`, `retryWithBackoff()`
 - `convex/agent/conversation.ts` — Conversation message generation, stop words
-- **Gemini stopSequences limit**: Max 16 (exclusive). `body.stop` is spread into a new array and sliced to 16 to prevent accumulation across retries.
+- **Gemini stopSequences limit**: Sliced to 4 in `chatCompletion()`. Originally 16 but caused 400 errors with Gemini; 4 is safe.
+
+### Drug System
+- `convex/constants.ts` — `DrugType`, `DRUG_DURATION`, `DRUG_SPEED_MODIFIER`, `DRUG_ACTIVITIES`, `DRUG_CONVERSATION_PROMPTS`, `DANCEFLOOR` bounds, `DANCE_PROBABILITY*`
+- `convex/aiTown/player.ts` — `drugState` field on Player (type + until), decay in `tick()`, speed modifier in `tickPathfinding()`
+- `convex/aiTown/agentInputs.ts` — `dropDrug` input handler: picks random sober agent, applies drug state
+- `convex/aiTown/agentOperations.ts` — Drug-aware behavior: drug-specific activity pools, dancefloor dancing with probability, cocaine ignores invite cooldowns, mushrooms never invite
+- `convex/aiTown/movement.ts` — `findRoute()` accepts `speedMultiplier` param for actual movement speed changes
+- `convex/agent/conversation.ts` — `agentPrompts()` injects drug personality into LLM system prompt
+- `convex/world.ts` — `dropDrug` mutation: looks up agent name, returns it for toast
+- `src/components/buttons/DrugButtons.tsx` — 3 emoji-only buttons (💊💗🍄) with colored borders
+- `src/components/PlayerDetails.tsx` — Drug state badge when clicking on drugged agent
+- `src/components/Character.tsx` — `danceSpeed` prop: cocaine=fast (0.5), mushroom=slow (0.12), normal=0.25
+- `src/components/Player.tsx` — Computes `danceSpeed` from `player.drugState`, passes to Character
+
+### Dancefloor
+- Map area: tiles x:25-33, y:18-25 (checkerboard pattern in festival tileset)
+- Agents randomly decide to dance there (20% base, 50% cocaine, 60% MDMA)
+- Dance activities have `dance: true` flag → triggers bounce animation in Character.tsx
 
 ### Frontend
 - `src/App.tsx` — Main layout, footer buttons
 - `src/components/Game.tsx` — Game view: PixiJS stage + right sidebar
 - `src/components/PixiGame.tsx` — PixiJS viewport, click-to-move, camera
-- `src/components/Player.tsx` — Sprite rendering, animation, speech bubbles
+- `src/components/Player.tsx` — Sprite rendering, animation, dance speed
 - `src/components/AgentCreator.tsx` — Agent manager: list and remove existing agents
-- `src/components/PlayerDetails.tsx` — Selected player info panel
+- `src/components/PlayerDetails.tsx` — Selected player info panel, drug state badge
+- `src/components/buttons/DrugButtons.tsx` — Drug drop buttons (💊💗🍄)
 
 ## Common Tasks
 

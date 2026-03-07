@@ -64,8 +64,15 @@ export const DELETE_BATCH_SIZE = 64;
 
 export const HUMAN_IDLE_TOO_LONG = 5 * 60 * 1000;
 
-export const ACTIVITIES = [
-  { description: 'танцует как ненормальный', emoji: '🕺', duration: 60_000 },
+export type ActivityDef = {
+  description: string;
+  emoji: string;
+  duration: number;
+  dance?: boolean;
+};
+
+export const ACTIVITIES: ActivityDef[] = [
+  { description: 'танцует как ненормальный', emoji: '🕺', duration: 60_000, dance: true },
   { description: 'крутит файер-шоу', emoji: '🔥', duration: 45_000 },
   { description: 'жонглирует бутылками', emoji: '🍾', duration: 50_000 },
   { description: 'орёт в мегафон', emoji: '📢', duration: 30_000 },
@@ -78,7 +85,7 @@ export const ACTIVITIES = [
   { description: 'показывает фокус', emoji: '🎩', duration: 40_000 },
   { description: 'кричит "ВОТЭТОЦИРК!"', emoji: '🎪', duration: 20_000 },
   { description: 'светится неоном', emoji: '✨', duration: 45_000 },
-  { description: 'качает головой под бит', emoji: '🎧', duration: 50_000 },
+  { description: 'качает головой под бит', emoji: '🎧', duration: 50_000, dance: true },
   { description: 'обнимает столб', emoji: '💃', duration: 35_000 },
 ];
 
@@ -97,22 +104,22 @@ export const DRUG_SPEED_MODIFIER: Record<DrugType, number> = {
   mushroom: 0.5,
 };
 
-export const DRUG_ACTIVITIES: Record<DrugType, typeof ACTIVITIES> = {
+export const DRUG_ACTIVITIES: Record<DrugType, ActivityDef[]> = {
   cocaine: [
     { description: 'бегает кругами как бешеный', emoji: '💊', duration: 20_000 },
-    { description: 'танцует с бешеной скоростью', emoji: '⚡', duration: 25_000 },
+    { description: 'танцует с бешеной скоростью', emoji: '⚡', duration: 25_000, dance: true },
     { description: 'рассказывает бизнес-план на миллиард', emoji: '💰', duration: 30_000 },
     { description: 'чистит зубы жвачкой', emoji: '😬', duration: 15_000 },
     { description: 'нюхает что-то с ключа', emoji: '🔑', duration: 10_000 },
     { description: 'говорит без остановки', emoji: '🗣️', duration: 35_000 },
-    { description: 'дёргает головой под каждый бит', emoji: '💥', duration: 20_000 },
+    { description: 'дёргает головой под каждый бит', emoji: '💥', duration: 20_000, dance: true },
   ],
   mdma: [
     { description: 'обнимает всех подряд', emoji: '🫂', duration: 40_000 },
-    { description: 'танцует с закрытыми глазами', emoji: '💗', duration: 60_000 },
+    { description: 'танцует с закрытыми глазами', emoji: '💗', duration: 60_000, dance: true },
     { description: 'гладит траву руками', emoji: '🌿', duration: 45_000 },
     { description: 'говорит всем "я тебя люблю"', emoji: '❤️', duration: 30_000 },
-    { description: 'качается в такт музыке', emoji: '🎶', duration: 50_000 },
+    { description: 'качается в такт музыке', emoji: '🎶', duration: 50_000, dance: true },
     { description: 'массирует себе челюсть', emoji: '😵', duration: 20_000 },
     { description: 'светится от счастья', emoji: '✨', duration: 55_000 },
   ],
@@ -123,7 +130,7 @@ export const DRUG_ACTIVITIES: Record<DrugType, typeof ACTIVITIES> = {
     { description: 'ржёт без причины', emoji: '🤣', duration: 40_000 },
     { description: 'лежит в траве и ржёт', emoji: '🍄', duration: 70_000 },
     { description: 'видит фракталы в облаках', emoji: '🌀', duration: 55_000 },
-    { description: 'медленно кружится на месте', emoji: '🔮', duration: 60_000 },
+    { description: 'медленно кружится на месте', emoji: '🔮', duration: 60_000, dance: true },
   ],
 };
 
@@ -132,6 +139,25 @@ export const DRUG_CONVERSATION_PROMPTS: Record<DrugType, string> = {
   mdma: `You are currently HIGH ON MDMA/ECSTASY. You feel overwhelming love and empathy for everyone. You want to hug people, tell them how beautiful they are, share deep emotional truths. Everything feels amazing - the music, the lights, the people. You're touchy-feely and deeply emotional. Use lots of affectionate language.`,
   mushroom: `You are currently HIGH ON MAGIC MUSHROOMS. Reality is melting and shifting around you. You see patterns in everything, have deep philosophical insights that may or may not make sense. You speak slowly, get distracted by visuals, sometimes forget what you were saying. Mix profound observations with complete nonsense. You might talk to objects or see things that aren't there.`,
 };
+
+// Dancefloor area on the map (tiles with checkerboard pattern)
+export const DANCEFLOOR = {
+  minX: 25,
+  maxX: 33,
+  minY: 18,
+  maxY: 25,
+};
+
+// Probability of choosing to dance (go to dancefloor)
+export const DANCE_PROBABILITY = 0.2;
+export const DANCE_PROBABILITY_COCAINE = 0.5;
+export const DANCE_PROBABILITY_MDMA = 0.6;
+
+export const DANCE_ACTIVITIES: ActivityDef[] = [
+  { description: 'танцует на танцполе', emoji: '🕺', duration: 45_000, dance: true },
+  { description: 'отжигает под музыку', emoji: '💃', duration: 50_000, dance: true },
+  { description: 'двигает телом', emoji: '🎶', duration: 40_000, dance: true },
+];
 
 export const ENGINE_ACTION_DURATION = 30000;
 

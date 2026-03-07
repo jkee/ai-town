@@ -10,7 +10,7 @@ import {
 } from '../agent/conversation';
 import { assertNever } from '../util/assertNever';
 import { serializedAgent } from './agent';
-import { ACTIVITIES, ACTIVITY_COOLDOWN, CONVERSATION_COOLDOWN, DRUG_ACTIVITIES, DrugType } from '../constants';
+import { ACTIVITIES, ACTIVITY_COOLDOWN, CONVERSATION_COOLDOWN, DRUG_ACTIVITIES, DrugType, DANCEFLOOR, DANCE_PROBABILITY, DANCE_PROBABILITY_COCAINE, DANCE_PROBABILITY_MDMA, DANCE_ACTIVITIES } from '../constants';
 import { api, internal } from '../_generated/api';
 import { sleep } from '../util/sleep';
 import { serializedPlayer } from './player';
@@ -134,6 +134,37 @@ export const agentDoSomething = internalAction({
         });
         return;
       } else {
+        // Roll for dancefloor dancing
+        const danceProbability = drugType === 'cocaine' ? DANCE_PROBABILITY_COCAINE
+          : drugType === 'mdma' ? DANCE_PROBABILITY_MDMA
+          : DANCE_PROBABILITY;
+        const shouldDance = Math.random() < danceProbability;
+
+        if (shouldDance) {
+          const danceActivity = DANCE_ACTIVITIES[Math.floor(Math.random() * DANCE_ACTIVITIES.length)];
+          const dancefloorDest = {
+            x: DANCEFLOOR.minX + Math.floor(Math.random() * (DANCEFLOOR.maxX - DANCEFLOOR.minX)),
+            y: DANCEFLOOR.minY + Math.floor(Math.random() * (DANCEFLOOR.maxY - DANCEFLOOR.minY)),
+          };
+          await sleep(Math.random() * 1000);
+          await ctx.runMutation(api.aiTown.main.sendInput, {
+            worldId: args.worldId,
+            name: 'finishDoSomething',
+            args: {
+              operationId: args.operationId,
+              agentId: agent.id,
+              activity: {
+                description: danceActivity.description,
+                emoji: danceActivity.emoji,
+                until: Date.now() + danceActivity.duration,
+                dance: true,
+              },
+              destination: dancefloorDest,
+            },
+          });
+          return;
+        }
+
         const activity = activityPool[Math.floor(Math.random() * activityPool.length)];
         await sleep(Math.random() * 1000);
         await ctx.runMutation(api.aiTown.main.sendInput, {
@@ -146,6 +177,7 @@ export const agentDoSomething = internalAction({
               description: activity.description,
               emoji: activity.emoji,
               until: Date.now() + activity.duration,
+              ...(activity.dance ? { dance: true } : {}),
             },
             // Drugged agents wander while doing their activity
             ...(isOnDrugs ? { destination: wanderDestination(map) } : {}),

@@ -92,6 +92,13 @@ export const Player = ({
     );
   const tileDim = game.worldMap.tileDim;
   const historicalFacing = { dx: historicalLocation.dx, dy: historicalLocation.dy };
+  const now = historicalTime ?? Date.now();
+  const activeActivity = player.activity && player.activity.until > now ? player.activity : undefined;
+  const isDancing = !!(activeActivity?.dance);
+  const isOnDrugs = player.drugState && now < player.drugState.until;
+  const drugType = isOnDrugs ? player.drugState!.type : null;
+  // Cocaine = fast dancing, mushroom = slow dancing
+  const danceSpeed = drugType === 'cocaine' ? 0.5 : drugType === 'mushroom' ? 0.12 : 0.25;
   return (
     <>
       <Character
@@ -101,11 +108,9 @@ export const Player = ({
         isMoving={historicalLocation.speed > 0}
         isThinking={isThinking}
         isSpeaking={isSpeaking}
-        emoji={
-          player.activity && player.activity.until > (historicalTime ?? Date.now())
-            ? player.activity?.emoji
-            : undefined
-        }
+        isDancing={isDancing}
+        danceSpeed={danceSpeed}
+        emoji={activeActivity?.emoji}
         isViewer={isViewer}
         textureUrl={dynamicSpriteSheetUrl || character!.textureUrl}
         spritesheetData={dynamicSpriteSheetUrl ? generatedSpritesheetData : character!.spritesheetData}
