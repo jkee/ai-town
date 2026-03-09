@@ -40,7 +40,7 @@ export default function AgentCreator() {
   return (
     <>
       <Button onClick={() => setModalOpen(true)} imgUrl={starImg}>
-        Артисты
+        <span className="hidden sm:inline">Артисты</span>
       </Button>
 
       <ReactModal

@@ -43,11 +43,10 @@ export default function MusicButton() {
     <>
       <Button
         onClick={() => void flipSwitch()}
-        className="hidden lg:block"
         title="Музыка (нажми M)"
         imgUrl={volumeImg}
       >
-        {isPlaying ? 'Тишина' : 'Музыка'}
+        <span className="hidden sm:inline">{isPlaying ? 'Тишина' : 'Музыка'}</span>
       </Button>
     </>
   );

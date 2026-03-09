@@ -42,7 +42,7 @@ export default function Game() {
   return (
     <>
       {SHOW_DEBUG_UI && <DebugTimeManager timeManager={timeManager} width={200} height={100} />}
-      <div className="mx-auto w-full lg:grow max-w-[1400px] min-h-[480px] game-frame relative">
+      <div className="mx-auto w-full grow max-w-[1400px] min-h-0 game-frame relative">
         {/* Game area - full width */}
         <div className="relative overflow-hidden bg-brown-900 w-full h-full" ref={gameWrapperRef}>
           <div className="absolute inset-0">
@@ -65,21 +65,31 @@ https://github.com/michalochman/react-pixi-fiber/issues/145#issuecomment-5315492
             </div>
           </div>
         </div>
-        {/* Player details overlay */}
+        {/* Player details — sidebar on desktop, bottom sheet on mobile */}
         {selectedElement && (
-          <div
-            className="absolute top-0 right-0 h-full w-80 overflow-y-auto px-4 py-6 bg-brown-900/95 text-brown-100 backdrop-blur-md border-l-2 border-neon-purple/40"
-            ref={scrollViewRef}
-          >
-            <PlayerDetails
-              worldId={worldId}
-              engineId={engineId}
-              game={game}
-              playerId={selectedElement?.id}
-              setSelectedElement={setSelectedElement}
-              scrollViewRef={scrollViewRef}
+          <>
+            {/* Mobile backdrop */}
+            <div
+              className="lg:hidden fixed inset-0 bg-black/50 z-30"
+              onClick={() => setSelectedElement(undefined)}
             />
-          </div>
+            {/* Mobile: bottom sheet, Desktop: right sidebar */}
+            <div
+              className="fixed bottom-0 left-0 right-0 z-30 max-h-[70dvh] overflow-y-auto px-4 py-4 bg-brown-900/95 text-brown-100 backdrop-blur-md border-t-2 border-neon-purple/40 bottom-sheet safe-area-bottom
+                         lg:absolute lg:top-0 lg:bottom-auto lg:left-auto lg:right-0 lg:h-full lg:max-h-full lg:w-80 lg:py-6 lg:border-t-0 lg:border-l-2"
+              ref={scrollViewRef}
+            >
+              <div className="w-10 h-1 bg-white/30 rounded-full mx-auto mb-3 lg:hidden" />
+              <PlayerDetails
+                worldId={worldId}
+                engineId={engineId}
+                game={game}
+                playerId={selectedElement?.id}
+                setSelectedElement={setSelectedElement}
+                scrollViewRef={scrollViewRef}
+              />
+            </div>
+          </>
         )}
       </div>
     </>

@@ -62,7 +62,7 @@ export default function AddAgentButton() {
   return (
     <>
       <Button imgUrl={starImg} onClick={() => setModalOpen(true)}>
-        Новый артист
+        <span className="hidden sm:inline">Новый артист</span>
       </Button>
 
       <ReactModal
