@@ -13,7 +13,13 @@ Fork of [ai-town](https://github.com/a16z-infra/ai-town) turned into **БЛЯД�
 - If a key is needed, fail with a clear error message, never fall back to a hardcoded key.
 - Before committing, always check for leaked secrets: `grep -r 'sk-or-v1\|sk-ant\|Bearer.*sk-' --include='*.ts' --include='*.mjs' --include='*.js'`
 
-## Quick Start
+## Deployment
+
+Production deployment docs: **[DEPLOY.md](./DEPLOY.md)** — Docker setup, nginx, restart/update procedures.
+
+Live: https://makaroshik.com/aitown
+
+## Quick Start (local dev)
 
 ```bash
 npm run dev          # Starts both Vite frontend + Convex local backend
