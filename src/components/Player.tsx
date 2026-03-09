@@ -10,6 +10,7 @@ import { useHistoricalValue } from '../hooks/useHistoricalValue.ts';
 import { PlayerDescription } from '../../convex/aiTown/playerDescription.ts';
 import { WorldMap } from '../../convex/aiTown/worldMap.ts';
 import { ServerGame } from '../hooks/serverGame.ts';
+import { fixStorageUrl } from './ConvexClientProvider.tsx';
 
 export type SelectElement = (element?: { kind: 'player'; id: GameId<'players'> }) => void;
 
@@ -61,7 +62,7 @@ export const Player = ({
     throw new Error(`Player ${player.id} has no character`);
   }
   const character = characters.find((c) => c.name === playerCharacter);
-  const dynamicSpriteSheetUrl = playerDesc?.spriteSheetUrl;
+  const dynamicSpriteSheetUrl = playerDesc?.spriteSheetUrl ? fixStorageUrl(playerDesc.spriteSheetUrl) : undefined;
 
   const locationBuffer = game.world.historicalLocations?.get(player.id);
   const historicalLocation = useHistoricalValue<Location>(

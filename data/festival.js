@@ -1,5 +1,5 @@
 // ULTIMATE Festival/Rave/Circus map
-export const tilesetpath = "/ai-town/assets/festival-tileset.png"
+export const tilesetpath = "/aitown/assets/festival-tileset.png"
 export const tiledim = 32
 export const screenxtiles = 48
 export const screenytiles = 32

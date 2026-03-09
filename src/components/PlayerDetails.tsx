@@ -3,6 +3,7 @@ import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import closeImg from '../../assets/close.svg';
 import { SelectElement } from './Player';
+import { fixStorageUrl } from './ConvexClientProvider';
 import { Messages } from './Messages';
 import { toastOnError } from '../toasts';
 import { useSendInput } from '../hooks/sendInput';
@@ -136,7 +137,7 @@ export default function PlayerDetails({
       {playerDescription?.portraitUrl && (
         <div className="mb-3">
           <img
-            src={playerDescription.portraitUrl}
+            src={fixStorageUrl(playerDescription.portraitUrl)}
             alt={playerDescription.name}
             className="w-full h-48 object-cover rounded border-4 border-brown-700"
           />

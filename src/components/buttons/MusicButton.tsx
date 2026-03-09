@@ -4,6 +4,7 @@ import { sound } from '@pixi/sound';
 import Button from './Button';
 import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
+import { fixStorageUrl } from '../ConvexClientProvider';
 
 export default function MusicButton() {
   const musicUrl = useQuery(api.music.getBackgroundMusic);
@@ -11,7 +12,7 @@ export default function MusicButton() {
 
   useEffect(() => {
     if (musicUrl) {
-      sound.add('background', musicUrl).loop = true;
+      sound.add('background', fixStorageUrl(musicUrl)).loop = true;
     }
   }, [musicUrl]);
 

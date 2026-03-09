@@ -76,3 +76,40 @@ docker compose logs -f backend
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
 ```
+
+### Convex proxy (обязательно!)
+
+Добавить в nginx конфиг **ПЕРЕД** блоком `/aitown`:
+
+```nginx
+location /convex/ {
+    proxy_pass http://127.0.0.1:3210/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 86400;
+}
+```
+
+Это проксирует WebSocket и storage URLs (спрайты, портреты, музыка) через nginx.
+
+## Проверка после деплоя
+
+```bash
+# 1. Convex proxy работает
+curl -s https://makaroshik.com/convex/version
+# Должен вернуть "unknown"
+
+# 2. Тайлсет грузится
+curl -sI https://makaroshik.com/aitown/assets/festival-tileset.png | head -1
+# HTTP/2 200
+
+# 3. В браузере: makaroshik.com/aitown
+# - WebSocket коннектится к wss://makaroshik.com/convex/...
+# - Спрайты/портреты грузятся через /convex/api/storage/...
+# - Анимации грузятся из /aitown/assets/spritesheets/...
+```
